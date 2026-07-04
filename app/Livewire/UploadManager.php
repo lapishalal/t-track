@@ -62,6 +62,7 @@ class UploadManager extends Component
 
     public function render()
     {
-        return view('livewire.upload-manager');
+        $uploadLogs = \App\Models\UploadLog::orderBy('created_at', 'desc')->limit(50)->get();
+        return view('livewire.upload-manager', ['uploadLogs' => $uploadLogs]);
     }
 }

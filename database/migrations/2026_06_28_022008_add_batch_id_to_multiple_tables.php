@@ -11,20 +11,26 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // 1. Tambah batch_id di tabel upload_logs
-        Schema::table('upload_logs', function (Blueprint $table) {
-            $table->string('batch_id')->nullable()->after('id')->index();
-        });
+        // 1. Tambah batch_id di tabel upload_logs (kalau belum ada)
+        if (!Schema::hasColumn('upload_logs', 'batch_id')) {
+            Schema::table('upload_logs', function (Blueprint $table) {
+                $table->string('batch_id')->nullable()->after('id')->index();
+            });
+        }
 
-        // 2. Tambah batch_id di tabel orders
-        Schema::table('orders', function (Blueprint $table) {
-            $table->string('batch_id')->nullable()->after('id')->index();
-        });
+        // 2. Tambah batch_id di tabel orders (kalau belum ada)
+        if (!Schema::hasColumn('orders', 'batch_id')) {
+            Schema::table('orders', function (Blueprint $table) {
+                $table->string('batch_id')->nullable()->after('id')->index();
+            });
+        }
 
-        // 3. Tambah batch_id di tabel incomes
-        Schema::table('incomes', function (Blueprint $table) {
-            $table->string('batch_id')->nullable()->after('id')->index();
-        });
+        // 3. Tambah batch_id di tabel incomes (kalau belum ada)
+        if (!Schema::hasColumn('incomes', 'batch_id')) {
+            Schema::table('incomes', function (Blueprint $table) {
+                $table->string('batch_id')->nullable()->after('id')->index();
+            });
+        }
     }
 
     /**
@@ -32,16 +38,22 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('upload_logs', function (Blueprint $table) {
-            $table->dropColumn('batch_id');
-        });
+        if (Schema::hasColumn('upload_logs', 'batch_id')) {
+            Schema::table('upload_logs', function (Blueprint $table) {
+                $table->dropColumn('batch_id');
+            });
+        }
 
-        Schema::table('orders', function (Blueprint $table) {
-            $table->dropColumn('batch_id');
-        });
+        if (Schema::hasColumn('orders', 'batch_id')) {
+            Schema::table('orders', function (Blueprint $table) {
+                $table->dropColumn('batch_id');
+            });
+        }
 
-        Schema::table('incomes', function (Blueprint $table) {
-            $table->dropColumn('batch_id');
-        });
+        if (Schema::hasColumn('incomes', 'batch_id')) {
+            Schema::table('incomes', function (Blueprint $table) {
+                $table->dropColumn('batch_id');
+            });
+        }
     }
 };

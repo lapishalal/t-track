@@ -12,11 +12,23 @@ class FinancialDashboard extends Component
 {
     public $selectedShop = '';
     public $shops = [];
-    
-    // Properti Baru untuk Filter Waktu
-    public $timeRange = 'all'; // Default: Semua Waktu
+    public $timeRange = 'all';
     public $startDate;
     public $endDate;
+
+    // Shipping Claim
+    public $showClaimModal = false;
+    public $claimOrderId = '';
+    public $claimTrackingId = '';
+    public $claimSelisih = 0;
+    public $claimEkspedisi = '';
+    public $claimTicketNumber = '';
+    public $claimStatus = 'belum_diklaim';
+    public $claimTanggalKlaim = '';
+    public $claimKeterangan = '';
+
+    // MoM Comparison
+    public $showComparison = false;
 
     public function mount()
     {
@@ -24,15 +36,10 @@ class FinancialDashboard extends Component
         if (!empty($this->shops)) {
             $this->selectedShop = $this->shops[0];
         }
-        
-        // Inisialisasi tanggal default (hari ini) untuk input kustom
         $this->startDate = Carbon::today()->format('Y-m-d');
         $this->endDate = Carbon::today()->format('Y-m-d');
     }
 
-    /**
-     * Helper untuk menerapkan filter tanggal ke query
-     */
     private function applyDateFilter($query, $dateColumn = 'created_time')
     {
         switch ($this->timeRange) {
@@ -54,73 +61,179 @@ class FinancialDashboard extends Component
                 }
                 return $query;
             default:
-                return $query; // 'all'
+                return $query;
         }
+    }
+
+    public function openClaimModal($orderId, $trackingId, $selisih)
+    {
+        $this->claimOrderId = $orderId;
+        $this->claimTrackingId = $trackingId ?? '';
+        $this->claimSelisih = $selisih;
+        
+        $existing = \App\Models\ShippingClaim::where('order_id', trim($orderId))->first();
+        if ($existing) {
+            $this->claimEkspedisi = $existing->ekspedisi;
+            $this->claimTicketNumber = $existing->ticket_number;
+            $this->claimStatus = $existing->status;
+            $this->claimTanggalKlaim = $existing->tanggal_klaim ? $existing->tanggal_klaim->format('Y-m-d') : '';
+            $this->claimKeterangan = $existing->keterangan;
+        } else {
+            $this->claimEkspedisi = '';
+            $this->claimTicketNumber = '';
+            $this->claimStatus = 'belum_diklaim';
+            $this->claimTanggalKlaim = '';
+            $this->claimKeterangan = '';
+        }
+        
+        $this->showClaimModal = true;
+    }
+
+    public function closeClaimModal()
+    {
+        $this->showClaimModal = false;
+        $this->reset(['claimOrderId', 'claimTrackingId', 'claimSelisih', 'claimEkspedisi', 'claimTicketNumber', 'claimStatus', 'claimTanggalKlaim', 'claimKeterangan']);
+    }
+
+    public function saveClaim()
+    {
+        $this->validate([
+            'claimOrderId' => 'required|string',
+            'claimEkspedisi' => 'nullable|string|max:50',
+            'claimTicketNumber' => 'nullable|string|max:100',
+            'claimStatus' => 'required|in:belum_diklaim,proses_klaim,berhasil,ditolak',
+            'claimTanggalKlaim' => 'nullable|date',
+            'claimKeterangan' => 'nullable|string|max:500',
+        ]);
+
+        \App\Models\ShippingClaim::updateOrCreate(
+            ['order_id' => trim($this->claimOrderId)],
+            [
+                'tracking_id' => $this->claimTrackingId,
+                'selisih_rugi' => $this->claimSelisih,
+                'ekspedisi' => $this->claimEkspedisi,
+                'ticket_number' => $this->claimTicketNumber,
+                'status' => $this->claimStatus,
+                'tanggal_klaim' => $this->claimTanggalKlaim ?: null,
+                'keterangan' => $this->claimKeterangan,
+                'created_by' => auth()->user()->name ?? 'System',
+            ]
+        );
+
+        $this->closeClaimModal();
+        session()->flash('success_claim', 'Data klaim ongkir berhasil disimpan.');
+    }
+
+    public function toggleComparison()
+    {
+        $this->showComparison = !$this->showComparison;
     }
 
     public function render()
     {
-        // 1. Ambil Query Dasar Berdasarkan Filter Toko
         $orderQuery = Order::query()->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop));
         $incomeQuery = Income::query()->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop));
 
-        // 2. TERAPKAN FILTER TANGGAL SECARA AMAN (Menggunakan Helper applyDateFilter)
         $orderQuery = $this->applyDateFilter($orderQuery, 'created_time');
-        
-        // Agar Dana Cair ikut terfilter sesuai waktu pencairan/waktu transaksinya di TikTok
-        $incomeQuery = $this->applyDateFilter($incomeQuery, 'payout_time'); // sesuaikan dengan kolom tanggal di tabel incomes Anda (misal payout_time)
+        $incomeQuery = $this->applyDateFilter($incomeQuery, 'payout_time');
 
-        // 3. Hitung Metrik Finansial Utama
         $totalOmsetKotor = $orderQuery->clone()->where('order_status', '!=', 'Cancelled')->sum('order_amount');
         $totalCairBersih = $incomeQuery->clone()->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
         $totalBiayaAdmin = $incomeQuery->clone()->sum(DB::raw('platform_commission_fee + payment_fee'));
 
-        // 4. Ambil Semua ID Pesanan yang SUDAH CAIR (Berdasarkan filter toko yang aktif)
         $allIncomeOrderIds = Income::query()
             ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
             ->pluck('order_id')
             ->map(fn($id) => trim($id))
             ->toArray();
 
-        // 5. Hitung TOTAL HPP & OVERHEAD (Hanya dari pesanan aktif hasil filter waktu)
-        $totalHppDanOverhead = 0;
+        $incomeMap = Income::query()
+            ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+            ->get()
+            ->keyBy(fn($income) => trim($income->order_id));
 
-        // Tambahkan filter 'where' di sini sebelum mengambil data dari database
-        $orders = $orderQuery->clone()->where('order_status', '!=', 'Cancelled')->get();
+        $totalHppDanOverhead = 0;
+        $orders = $orderQuery->clone()->where('order_status', '!=', 'Cancelled')->with('income')->get();
 
         foreach ($orders as $order) {
             $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
-
             if ($cost) {
                 $totalHppDanOverhead += $order->quantity * ($cost->hpp_amount + $cost->overhead_per_pack);
             }
         }
 
-        // 6. KALKULASI DANA BELUM CAIR (UNMATCHED ORDERS)
         $totalDanaMenggantung = 0;
         $pesananBelumCairList = collect();
-
         foreach ($orders as $order) {
-            if ($order->order_status !== 'Cancelled') {
-                // Jika ID Pesanan TIDAK ADA di dalam rumpun data Income, artinya BELUM CAIR
-                if (!in_array(trim($order->order_id), $allIncomeOrderIds)) {
-                    $totalDanaMenggantung += $order->order_amount;
-                    $pesananBelumCairList->push($order);
-                }
+            if ($order->order_status !== 'Cancelled' && !in_array(trim($order->order_id), $allIncomeOrderIds)) {
+                $totalDanaMenggantung += $order->order_amount;
+                $pesananBelumCairList->push($order);
             }
         }
 
-        // 7. HITUNG NET PROFIT BERSIH RIIL
         $profitBersihRiil = $totalCairBersih - $totalHppDanOverhead;
 
-        // 8. Detektor Anomali Selisih Ongkir (Gunakan join TRIM yang sudah aman)
+        // Profit Breakdown per SKU
+        $skuProfitMap = [];
+        foreach ($orders as $order) {
+            $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
+            $trimmedOrderId = trim($order->order_id);
+            $incomeRecord = $incomeMap->get($trimmedOrderId);
+            $cair = $incomeRecord ? $incomeRecord->disbursement_amount : 0;
+            $hpp = $cost ? $order->quantity * $cost->hpp_amount : 0;
+            $overhead = $cost ? $order->quantity * $cost->overhead_per_pack : 0;
+            $profit = $cair - ($hpp + $overhead);
+
+            if (!isset($skuProfitMap[$order->sku_id])) {
+                $skuProfitMap[$order->sku_id] = [
+                    'sku_id' => $order->sku_id,
+                    'product_name' => $order->product_name,
+                    'total_sold' => 0, 'total_omset' => 0, 'total_cair' => 0,
+                    'total_hpp' => 0, 'total_overhead' => 0, 'total_profit' => 0,
+                ];
+            }
+            $skuProfitMap[$order->sku_id]['total_sold'] += $order->quantity;
+            $skuProfitMap[$order->sku_id]['total_omset'] += $order->order_amount;
+            $skuProfitMap[$order->sku_id]['total_cair'] += $cair;
+            $skuProfitMap[$order->sku_id]['total_hpp'] += $hpp;
+            $skuProfitMap[$order->sku_id]['total_overhead'] += $overhead;
+            $skuProfitMap[$order->sku_id]['total_profit'] += $profit;
+        }
+        $skuProfitList = collect($skuProfitMap)->sortByDesc('total_profit')->values();
+
+        // Regional Dashboard
+        $provinceMap = [];
+        foreach ($orders as $order) {
+            $province = $order->province ?? 'Tidak Diketahui';
+            if (!isset($provinceMap[$province])) {
+                $provinceMap[$province] = [
+                    'province' => $province, 'total_orders' => 0, 'total_omset' => 0,
+                    'total_shipping' => 0, 'pending_orders' => 0, 'pending_amount' => 0,
+                ];
+            }
+            $provinceMap[$province]['total_orders']++;
+            $provinceMap[$province]['total_omset'] += $order->order_amount;
+            $provinceMap[$province]['total_shipping'] += $order->shipping_fee_estimated ?? 0;
+            if (!in_array(trim($order->order_id), $allIncomeOrderIds)) {
+                $provinceMap[$province]['pending_orders']++;
+                $provinceMap[$province]['pending_amount'] += $order->order_amount;
+            }
+        }
+        $provinceList = collect($provinceMap)
+            ->map(function($item) {
+                $item['avg_shipping'] = $item['total_orders'] > 0 ? $item['total_shipping'] / $item['total_orders'] : 0;
+                return $item;
+            })
+            ->sortByDesc('total_orders')
+            ->values();
+
+        // Anomali Ongkir
         $anomaliOngkir = Order::query()
             ->when($this->selectedShop, fn($q) => $q->where('orders.shop_name', $this->selectedShop))
             ->whereIn('orders.order_id', $orderQuery->clone()->pluck('order_id')->toArray())
             ->join('incomes', DB::raw('TRIM(orders.order_id)'), '=', DB::raw('TRIM(incomes.order_id)'))
             ->select(
-                'orders.order_id',
-                'orders.product_name',
+                'orders.order_id', 'orders.product_name', 'orders.tracking_id',
                 'orders.shipping_fee_estimated as estimasi',
                 'incomes.shipping_fee_real as riil',
                 DB::raw('(incomes.shipping_fee_real - orders.shipping_fee_estimated) as selisih_rugi'),
@@ -131,19 +244,70 @@ class FinancialDashboard extends Component
             ->orderBy('selisih_rugi', 'desc')
             ->get();
 
-        // 9. HITUNG KUANTITAS TERJUAL PER SKU (TRENDING PRODUCT)
-        // Query ini otomatis mengikuti filter Toko dan Rentang Waktu dari $orderQuery
+        $claimOrderIds = \App\Models\ShippingClaim::pluck('order_id')->map(fn($id) => trim($id))->toArray();
+        $claimsMap = \App\Models\ShippingClaim::all()->keyBy(fn($c) => trim($c->order_id));
+
+        $totalPotensiKlaim = $anomaliOngkir->sum('selisih_rugi');
+        $totalSudahDiklaim = 0;
+        foreach ($anomaliOngkir as $a) {
+            $cid = trim($a->order_id);
+            if (isset($claimsMap[$cid]) && in_array($claimsMap[$cid]->status, ['berhasil', 'proses_klaim'])) {
+                $totalSudahDiklaim += $a->selisih_rugi;
+            }
+        }
+
+        // Trending SKU
         $skuTrendingList = $orderQuery->clone()
             ->where('order_status', '!=', 'Cancelled')
             ->select(
                 'sku_id',
-                DB::raw('MAX(product_name) as nama_produk'), // Mengambil sampel nama produk agar mudah dibaca
+                DB::raw('MAX(product_name) as nama_produk'),
                 DB::raw('SUM(quantity) as total_terjual'),
                 DB::raw('SUM(order_amount) as total_omset')
             )
             ->groupBy('sku_id')
-            ->orderBy('total_terjual', 'desc') // Urutkan dari yang paling laris/trending
+            ->orderBy('total_terjual', 'desc')
             ->get();
+
+        // MoM Comparison
+        $comparisonData = null;
+        if ($this->showComparison && $this->timeRange !== 'custom') {
+            $now = Carbon::now();
+            if ($this->timeRange === 'this_month') {
+                $lastPeriodStart = $now->copy()->subMonth()->startOfMonth();
+                $lastPeriodEnd = $now->copy()->subMonth()->endOfMonth();
+            } elseif ($this->timeRange === '7_days') {
+                $lastPeriodStart = $now->copy()->subDays(14);
+                $lastPeriodEnd = $now->copy()->subDays(7);
+            } elseif ($this->timeRange === 'today') {
+                $lastPeriodStart = $now->copy()->yesterday()->startOfDay();
+                $lastPeriodEnd = $now->copy()->yesterday()->endOfDay();
+            } else {
+                $lastPeriodStart = $now->copy()->subMonth()->startOfMonth();
+                $lastPeriodEnd = $now->copy()->subMonth()->endOfMonth();
+            }
+
+            $lastOrderQuery = Order::query()
+                ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+                ->whereBetween('created_time', [$lastPeriodStart, $lastPeriodEnd]);
+            
+            $lastIncomeQuery = Income::query()
+                ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+                ->whereBetween('payout_time', [$lastPeriodStart, $lastPeriodEnd]);
+
+            $lastOmset = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->sum('order_amount');
+            $lastCair = $lastIncomeQuery->clone()->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
+            $lastOrderCount = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->count();
+
+            $comparisonData = [
+                'period_label' => $lastPeriodStart->format('d M') . ' - ' . $lastPeriodEnd->format('d M Y'),
+                'omset' => $lastOmset,
+                'cair' => $lastCair,
+                'order_count' => $lastOrderCount,
+                'omset_delta' => $lastOmset > 0 ? (($totalOmsetKotor - $lastOmset) / $lastOmset) * 100 : 0,
+                'cair_delta' => $lastCair > 0 ? (($totalCairBersih - $lastCair) / $lastCair) * 100 : 0,
+            ];
+        }
 
         return view('livewire.financial-dashboard', [
             'omsetKotor' => $totalOmsetKotor,
@@ -154,7 +318,14 @@ class FinancialDashboard extends Component
             'totalDanaMenggantung' => $totalDanaMenggantung,
             'pesananBelumCairList' => $pesananBelumCairList,
             'anomaliOngkirList' => $anomaliOngkir,
-            'skuTrendingList' => $skuTrendingList
+            'skuTrendingList' => $skuTrendingList,
+            'skuProfitList' => $skuProfitList,
+            'provinceList' => $provinceList,
+            'claimOrderIds' => $claimOrderIds,
+            'claimsMap' => $claimsMap,
+            'totalPotensiKlaim' => $totalPotensiKlaim,
+            'totalSudahDiklaim' => $totalSudahDiklaim,
+            'comparisonData' => $comparisonData,
         ]);
     }
 }

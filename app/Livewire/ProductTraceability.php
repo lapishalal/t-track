@@ -42,6 +42,27 @@ class ProductTraceability extends Component
         $this->resetPage();
     }
 
+    public $showOrderModal = false;
+    public $selectedOrder = null;
+
+    public function showOrderDetail($orderId)
+    {
+        $order = Order::with('income')->where('order_id', $orderId)->first();
+        if ($order) {
+            $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
+            $order->hpp_amount = $cost ? $cost->hpp_amount : 0;
+            $order->overhead_per_pack = $cost ? $cost->overhead_per_pack : 0;
+        }
+        $this->selectedOrder = $order;
+        $this->showOrderModal = true;
+    }
+
+    public function closeOrderDetail()
+    {
+        $this->showOrderModal = false;
+        $this->selectedOrder = null;
+    }
+
     /**
      * Fitur Clean Report Export (.xlsx)
      */

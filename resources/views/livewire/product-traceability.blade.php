@@ -294,8 +294,13 @@
                 @forelse($ordersData as $order)
                     <tr class="hover:bg-indigo-50/40 transition-colors duration-150 group">
                         <td class="px-4 py-3 text-xs font-medium">{{ $order->created_time }}</td>
-                        <td class="px-4 py-3 font-mono text-xs text-indigo-600 font-semibold group-hover:text-indigo-800 transition-colors">
-                            {{ $order->order_id }}
+                        <td class="px-4 py-3 font-mono text-xs text-indigo-600 font-semibold group-hover:text-indigo-800 transition-colors cursor-pointer"
+                            wire:click="showOrderDetail('{{ $order->order_id }}')"
+                            title="Klik untuk lihat detail">
+                            <span class="flex items-center gap-1 hover:underline">
+                                {{ $order->order_id }}
+                                <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            </span>
                         </td>
                         <td class="px-4 py-3 max-w-xs truncate font-medium text-gray-800">{{ $order->product_name }}</td>
                         <td class="px-4 py-3 text-xs">
@@ -347,4 +352,97 @@
     <div class="mt-4">
         {{ $ordersData->links() }}
     </div>
+
+
+    <!-- ============ MODAL DETAIL ORDER ============ -->
+    @if($showOrderModal && $selectedOrder)
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" wire:click="closeOrderDetail"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3 sm:px-6">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg leading-6 font-bold text-white flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            Detail Order
+                        </h3>
+                        <button wire:click="closeOrderDetail" class="text-white hover:text-indigo-100 transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-indigo-100 font-medium">Order ID: <span class="font-mono">{{ $selectedOrder->order_id }}</span></p>
+                </div>
+                <div class="px-4 py-4 sm:px-6 max-h-[70vh] overflow-y-auto">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Toko</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ $selectedOrder->shop_name }}</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Status Pesanan</p>
+                            <span class="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded-full">{{ $selectedOrder->order_status }}</span>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Tanggal Pesanan</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ $selectedOrder->created_time ? \Carbon\Carbon::parse($selectedOrder->created_time)->format('d M Y H:i') : '-' }}</p>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold">Quantity</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ $selectedOrder->quantity }} pcs</p>
+                        </div>
+                    </div>
+                    <div class="border border-gray-200 rounded-lg p-3 mb-4">
+                        <p class="text-[10px] text-gray-400 uppercase font-bold mb-1">Produk</p>
+                        <p class="text-sm font-semibold text-gray-800">{{ $selectedOrder->product_name }}</p>
+                        <p class="text-xs text-gray-500 mt-0.5">SKU: <span class="font-mono text-indigo-600">{{ $selectedOrder->sku_id }}</span></p>
+                        @if($selectedOrder->variation)
+                            <p class="text-xs text-gray-500 mt-0.5">Varian: {{ $selectedOrder->variation }}</p>
+                        @endif
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold mb-1">Pembeli</p>
+                            <p class="text-sm font-semibold text-gray-800">{{ $selectedOrder->buyer_username ?? '-' }}</p>
+                            <p class="text-xs text-gray-500 mt-0.5">{{ $selectedOrder->province ?? '-' }}, {{ $selectedOrder->regency_city ?? '-' }}</p>
+                        </div>
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <p class="text-[10px] text-gray-400 uppercase font-bold mb-1">Resi</p>
+                            <p class="text-sm font-mono font-semibold text-indigo-600">{{ $selectedOrder->tracking_id ?? '-' }}</p>
+                            <p class="text-xs text-gray-500 mt-0.5">Ongkir Estimasi: Rp {{ number_format($selectedOrder->shipping_fee_estimated, 0, ',', '.') }}</p>
+                        </div>
+                    </div>
+                    <div class="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-lg p-4">
+                        <p class="text-[10px] text-emerald-600 uppercase font-bold mb-2">Ringkasan Finansial</p>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div class="flex justify-between"><span class="text-gray-600">Omset Kotor</span><span class="font-semibold text-gray-800">Rp {{ number_format($selectedOrder->order_amount, 0, ',', '.') }}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">HPP</span><span class="font-semibold text-gray-800">Rp {{ number_format(($selectedOrder->hpp_amount ?? 0) * $selectedOrder->quantity, 0, ',', '.') }}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Overhead</span><span class="font-semibold text-gray-800">Rp {{ number_format(($selectedOrder->overhead_per_pack ?? 0) * $selectedOrder->quantity, 0, ',', '.') }}</span></div>
+                            <div class="flex justify-between border-t border-emerald-200 pt-2 mt-1"><span class="text-gray-600">Dana Cair</span><span class="font-semibold text-gray-800">Rp {{ number_format($selectedOrder->income ? $selectedOrder->income->disbursement_amount : 0, 0, ',', '.') }}</span></div>
+                            <div class="flex justify-between col-span-2">
+                                @php
+                                    $cair = $selectedOrder->income ? $selectedOrder->income->disbursement_amount : 0;
+                                    $hppTotal = ($selectedOrder->hpp_amount ?? 0) * $selectedOrder->quantity;
+                                    $overheadTotal = ($selectedOrder->overhead_per_pack ?? 0) * $selectedOrder->quantity;
+                                    $profit = $cair - ($hppTotal + $overheadTotal);
+                                @endphp
+                                <span class="text-gray-700 font-bold">Profit Bersih</span>
+                                <span class="font-bold {{ $profit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">Rp {{ number_format($profit, 0, ',', '.') }}</span>
+                            </div>
+                            @if($selectedOrder->income && $selectedOrder->income->payout_time)
+                            <div class="flex justify-between col-span-2 text-xs text-gray-500">
+                                <span>Tanggal Cair:</span>
+                                <span>{{ \Carbon\Carbon::parse($selectedOrder->income->payout_time)->format('d M Y H:i') }}</span>
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button wire:click="closeOrderDetail" class="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-gray-800 text-base font-medium text-white hover:bg-gray-900 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition">Tutup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
 </div>
