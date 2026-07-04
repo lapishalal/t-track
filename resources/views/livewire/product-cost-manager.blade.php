@@ -81,11 +81,6 @@
         </div>
     </div>
     @endif
-        <div class="p-3 bg-green-100 text-green-800 rounded mb-4 text-sm font-medium">
-            {{ session('success_cost') }}
-        </div>
-    @endif
-
     <div class="overflow-x-auto border border-gray-200 rounded-lg">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50 text-gray-700 font-medium uppercase text-xs">

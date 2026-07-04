@@ -14,19 +14,15 @@ class UploadManager extends Component
     public $file_order;
     public $file_income;
 
-    protected $rules = [
-        'shop_name' => 'required|string|min:3',
-    ];
-
     public function processOrder(TikTokParserService $parser)
     {
         $this->validate([
-            // Menggunakan validasi 'extensions' jauh lebih aman dari error salah baca MIME type
-            'file_order'  => 'nullable|file|extensions:xlsx,xls,csv|max:10240', // Maksimal 10MB
-            'file_income' => 'nullable|file|extensions:xlsx,xls,csv|max:10240', // Maksimal 10MB
+            'shop_name' => 'required|string|min:3|max:255',
+            'file_order' => 'required|file|extensions:xlsx,xls,csv|max:10240',
         ]);
 
         try {
+            $this->shop_name = trim($this->shop_name);
             $filePath = $this->file_order->getRealPath();
             $originalName = $this->file_order->getClientOriginalName();
 
@@ -42,12 +38,12 @@ class UploadManager extends Component
     public function processIncome(TikTokParserService $parser)
     {
         $this->validate([
-            // Menggunakan validasi 'extensions' jauh lebih aman dari error salah baca MIME type
-            'file_order'  => 'nullable|file|extensions:xlsx,xls,csv|max:10240', // Maksimal 10MB
-            'file_income' => 'nullable|file|extensions:xlsx,xls,csv|max:10240', // Maksimal 10MB
+            'shop_name' => 'required|string|min:3|max:255',
+            'file_income' => 'required|file|extensions:xlsx,xls,csv|max:10240',
         ]);
 
         try {
+            $this->shop_name = trim($this->shop_name);
             $filePath = $this->file_income->getRealPath();
             $originalName = $this->file_income->getClientOriginalName();
 

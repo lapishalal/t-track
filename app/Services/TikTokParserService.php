@@ -19,6 +19,11 @@ class TikTokParserService
      */
     public function parseOrderCsv($filePath, $shopName, $originalFileName)
     {
+        $shopName = trim((string) $shopName);
+        if ($shopName === '') {
+            throw new \Exception('Nama toko wajib diisi sebelum mengunggah file pesanan.');
+        }
+
         $file = fopen($filePath, 'r');
         $header = fgetcsv($file); // Membaca baris pertama sebagai header
 
@@ -110,6 +115,11 @@ class TikTokParserService
      */
     public function parseIncomeXlsx($filePath, $shopName, $originalFileName)
     {
+        $shopName = trim((string) $shopName);
+        if ($shopName === '') {
+            throw new \Exception('Nama toko wajib diisi sebelum mengunggah file income.');
+        }
+
         $spreadsheet = IOFactory::load($filePath);
         $sheet = $spreadsheet->getSheetByName('Detail pesanan');
 

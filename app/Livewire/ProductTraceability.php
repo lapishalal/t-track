@@ -45,6 +45,11 @@ class ProductTraceability extends Component
     public $showOrderModal = false;
     public $selectedOrder = null;
 
+    public function mount()
+    {
+        abort_unless(auth()->user()?->isOwner(), 403);
+    }
+
     public function showOrderDetail($orderId)
     {
         $order = Order::with('income')->where('order_id', $orderId)->first();

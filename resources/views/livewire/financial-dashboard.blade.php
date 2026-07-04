@@ -42,6 +42,82 @@
         </div>
     </div>
 
+    @if (session('success_target'))
+        <div class="px-4 py-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-medium">
+            {{ session('success_target') }}
+        </div>
+    @endif
+
+    <!-- Target Bulanan & Report -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 p-4 bg-white rounded-lg shadow-sm border border-sky-100">
+            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                    <p class="text-xs font-bold uppercase text-sky-600 tracking-wider">Target Bulanan</p>
+                    <h4 class="text-base font-semibold text-gray-800 mt-1">
+                        {{ $selectedShop ?: 'Semua Toko' }} - {{ $targetMonthLabel }}
+                    </h4>
+                    <p class="text-xs text-gray-500 mt-1">Progress dihitung dari omset non-cancelled pada bulan target.</p>
+                </div>
+                <div class="text-left md:text-right">
+                    <p class="text-xs text-gray-400 font-medium">Tercapai</p>
+                    <p class="text-2xl font-bold text-sky-700">{{ number_format($targetProgress, 1) }}%</p>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <div class="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div class="h-full bg-sky-600 rounded-full transition-all duration-300" style="width: {{ $targetProgress }}%"></div>
+                </div>
+                <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div class="bg-gray-50 rounded-md px-3 py-2">
+                        <span class="block text-gray-400 font-bold uppercase">Omset Bulan Ini</span>
+                        <span class="font-semibold text-gray-800">Rp {{ number_format($monthlySales, 0, ',', '.') }}</span>
+                    </div>
+                    <div class="bg-gray-50 rounded-md px-3 py-2">
+                        <span class="block text-gray-400 font-bold uppercase">Target</span>
+                        <span class="font-semibold text-gray-800">Rp {{ number_format($monthlyTarget, 0, ',', '.') }}</span>
+                    </div>
+                    <div class="bg-gray-50 rounded-md px-3 py-2">
+                        <span class="block text-gray-400 font-bold uppercase">Sisa</span>
+                        <span class="font-semibold text-gray-800">Rp {{ number_format($targetRemaining, 0, ',', '.') }}</span>
+                    </div>
+                </div>
+            </div>
+
+            @if($isOwner)
+                <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Bulan Target</label>
+                        <input type="month" wire:model.live="targetMonth" class="border border-gray-300 rounded-md text-xs px-3 py-1.5 focus:ring-sky-500">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Target Toko Terpilih</label>
+                        <input type="number" min="0" step="1000" wire:model="targetAmount" @disabled(!$selectedShop) class="w-full border border-gray-300 rounded-md text-xs px-3 py-1.5 focus:ring-sky-500 disabled:bg-gray-100" placeholder="Pilih toko lalu isi target">
+                        <x-input-error :messages="$errors->get('targetAmount')" class="mt-1" />
+                    </div>
+                    <button wire:click="saveMonthlyTarget" @disabled(!$selectedShop) class="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:bg-gray-300 text-white rounded-md text-xs font-bold transition">
+                        Simpan Target
+                    </button>
+                </div>
+            @endif
+        </div>
+
+        <div class="p-4 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col justify-between">
+            <div>
+                <p class="text-xs font-bold uppercase text-gray-500 tracking-wider">Investor / Owner Report</p>
+                <h4 class="text-base font-semibold text-gray-800 mt-1">Printable Analytics</h4>
+                <p class="text-xs text-gray-500 mt-1">Berisi KPI, chart performa SKU, target bulanan, dan tabel ringkasan sesuai filter aktif.</p>
+            </div>
+            <a href="{{ route('analytics.report', ['shop' => $selectedShop, 'range' => $timeRange, 'start' => $startDate, 'end' => $endDate, 'target_month' => $targetMonth]) }}"
+               target="_blank"
+               class="mt-4 inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-md text-xs font-bold transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8V4h10v4m-9 8H6a2 2 0 01-2-2v-4a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2h-2m-8 0h8v4H8v-4z"/></svg>
+                Export PDF / Print
+            </a>
+        </div>
+    </div>
+
     <!-- Tombol Toggle MoM Comparison -->
     <div class="flex justify-end mb-2">
         <button wire:click="toggleComparison" 
@@ -89,6 +165,96 @@
             <p class="text-xl font-bold mt-1">Rp {{ number_format($profitBersih, 0, ',', '.') }}</p>
         </div>
     </div>
+
+    @if($showComparison && $comparisonData)
+        @php
+            $maxOmsetCompare = max($omsetKotor, $comparisonData['omset'], 1);
+            $maxProfitCompare = max(abs($profitBersih), abs($comparisonData['profit']), 1);
+            $maxOrderCompare = max($comparisonData['current_order_count'], $comparisonData['order_count'], 1);
+            $comparisonRows = [
+                [
+                    'label' => 'Omset',
+                    'current' => $omsetKotor,
+                    'previous' => $comparisonData['omset'],
+                    'delta' => $comparisonData['omset_delta'],
+                    'max' => $maxOmsetCompare,
+                    'format' => 'currency',
+                ],
+                [
+                    'label' => 'Profit',
+                    'current' => $profitBersih,
+                    'previous' => $comparisonData['profit'],
+                    'delta' => $comparisonData['profit_delta'],
+                    'max' => $maxProfitCompare,
+                    'format' => 'currency',
+                ],
+                [
+                    'label' => 'Order Count',
+                    'current' => $comparisonData['current_order_count'],
+                    'previous' => $comparisonData['order_count'],
+                    'delta' => $comparisonData['order_delta'],
+                    'max' => $maxOrderCompare,
+                    'format' => 'number',
+                ],
+            ];
+        @endphp
+        <div class="p-5 bg-white rounded-lg shadow-sm border border-indigo-100">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+                <div>
+                    <h4 class="font-semibold text-gray-800 text-sm">Bulan/Periode Ini vs Periode Lalu</h4>
+                    <p class="text-[11px] text-gray-500">Pembanding: {{ $comparisonData['period_label'] }}</p>
+                </div>
+                <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full">Omset, Profit, Order Count</span>
+            </div>
+            <div class="space-y-4">
+                @foreach($comparisonRows as $row)
+                    @php
+                        $currentWidth = min((abs($row['current']) / $row['max']) * 100, 100);
+                        $previousWidth = min((abs($row['previous']) / $row['max']) * 100, 100);
+                        $deltaColor = $row['delta'] >= 0 ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50';
+                    @endphp
+                    <div class="grid grid-cols-1 md:grid-cols-[130px,1fr,90px] gap-3 items-center">
+                        <div>
+                            <p class="text-xs font-bold text-gray-700">{{ $row['label'] }}</p>
+                            <span class="inline-flex mt-1 px-2 py-0.5 rounded text-[10px] font-bold {{ $deltaColor }}">
+                                {{ $row['delta'] >= 0 ? 'Naik' : 'Turun' }} {{ number_format(abs($row['delta']), 1) }}%
+                            </span>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-16 text-[10px] text-gray-400 font-bold uppercase">Sekarang</span>
+                                <div class="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-indigo-600 rounded-full" style="width: {{ $currentWidth }}%"></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-16 text-[10px] text-gray-400 font-bold uppercase">Lalu</span>
+                                <div class="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-gray-400 rounded-full" style="width: {{ $previousWidth }}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-right text-[11px] text-gray-600">
+                            <p class="font-bold text-gray-800">
+                                @if($row['format'] === 'currency')
+                                    Rp {{ number_format($row['current'], 0, ',', '.') }}
+                                @else
+                                    {{ number_format($row['current'], 0, ',', '.') }}
+                                @endif
+                            </p>
+                            <p>
+                                @if($row['format'] === 'currency')
+                                    Rp {{ number_format($row['previous'], 0, ',', '.') }}
+                                @else
+                                    {{ number_format($row['previous'], 0, ',', '.') }}
+                                @endif
+                            </p>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
 
     <!-- TRENDING SKU -->
     <div class="p-5 bg-white rounded-lg shadow-sm border border-indigo-100 flex flex-col mb-6">
@@ -186,6 +352,58 @@
         </div>
     </div>
 
+    <!-- RETURN & REFUND TRACKER -->
+    <div class="p-5 bg-white rounded-lg shadow-sm border border-rose-100 flex flex-col mb-6">
+        <div class="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+                <h4 class="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 bg-rose-600 rounded-full"></span>
+                    Return & Refund Tracker
+                </h4>
+                <p class="text-[11px] text-gray-500">Indikasi retur/refund dari order yang belum cair terlalu lama.</p>
+            </div>
+            <div class="flex gap-2">
+                <span class="text-xs font-medium bg-rose-50 text-rose-700 px-2.5 py-1 rounded">{{ $returnRefundCandidates->count() }} Kandidat</span>
+                <span class="text-xs font-medium bg-red-50 text-red-700 px-2.5 py-1 rounded">{{ $returnRefundHighRisk }} Risiko Tinggi</span>
+                <span class="text-xs font-medium bg-gray-50 text-gray-700 px-2.5 py-1 rounded">Rp {{ number_format($returnRefundAmount, 0, ',', '.') }}</span>
+            </div>
+        </div>
+        <div class="overflow-x-auto overflow-y-auto max-h-80 border border-gray-100 rounded">
+            <table class="min-w-full divide-y divide-gray-200 text-xs">
+                <thead class="bg-rose-50 text-rose-800 font-semibold uppercase sticky top-0 z-10">
+                    <tr>
+                        <th class="px-3 py-2 text-center w-10">No</th>
+                        <th class="px-3 py-2 text-left">ID Pesanan</th>
+                        <th class="px-3 py-2 text-left">Produk</th>
+                        <th class="px-3 py-2 text-center">Umur Belum Cair</th>
+                        <th class="px-3 py-2 text-right">Nilai</th>
+                        <th class="px-3 py-2 text-center">Status Audit</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-gray-600">
+                    @forelse($returnRefundCandidates as $candidate)
+                        @php
+                            $riskBadge = $candidate->refund_risk === 'tinggi'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700';
+                            $riskLabel = $candidate->refund_risk === 'tinggi' ? 'Indikasi Return/Refund' : 'Pantau Pencairan';
+                        @endphp
+                        <tr class="{{ $candidate->refund_risk === 'tinggi' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-amber-50/30' }} transition">
+                            <td class="px-3 py-2.5 text-center text-gray-400">{{ $loop->iteration }}</td>
+                            <td class="px-3 py-2.5 font-mono text-indigo-600">{{ $candidate->order_id }}</td>
+                            <td class="px-3 py-2.5 truncate max-w-xs">{{ $candidate->product_name }}</td>
+                            <td class="px-3 py-2.5 text-center font-bold">{{ $candidate->days_pending }} hari</td>
+                            <td class="px-3 py-2.5 text-right font-medium">Rp {{ number_format($candidate->order_amount, 0, ',', '.') }}</td>
+                            <td class="px-3 py-2.5 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ $riskBadge }}">{{ $riskLabel }}</span></td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="6" class="px-3 py-4 text-center text-gray-400 text-[11px]">Tidak ada order lama yang belum cair.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- PESANAN BELUM CAIR -->
         <div class="p-5 bg-white rounded-lg shadow-sm border border-amber-200 flex flex-col h-[400px]">
@@ -272,7 +490,7 @@
                                 $sb = match($cst) { 'berhasil' => 'bg-emerald-100 text-emerald-700', 'proses_klaim' => 'bg-blue-100 text-blue-700', 'ditolak' => 'bg-gray-100 text-gray-600', default => 'bg-red-100 text-red-600' };
                                 $sl = match($cst) { 'berhasil' => 'Berhasil', 'proses_klaim' => 'Proses', 'ditolak' => 'Ditolak', default => 'Belum' };
                             @endphp
-                            <tr class="{{ $rc }} transition cursor-pointer" wire:click="openClaimModal('{{ $anomali->order_id }}', '{{ $anomali->tracking_id }}', {{ $anomali->selisih_rugi }})">
+                            <tr class="{{ $rc }} transition {{ $isOwner ? 'cursor-pointer' : '' }}" @if($isOwner) wire:click="openClaimModal('{{ $anomali->order_id }}', '{{ $anomali->tracking_id }}', {{ $anomali->selisih_rugi }})" @endif>
                                 <td class="px-2 py-2 font-mono text-[10px]">{{ $anomali->order_id }}</td>
                                 <td class="px-2 py-2 text-right font-bold text-red-600">-Rp {{ number_format($anomali->selisih_rugi, 0, ',', '.') }}</td>
                                 <td class="px-2 py-2 text-center"><span class="px-1.5 py-0.5 rounded text-[9px] font-bold {{ $sb }}">{{ $sl }}</span></td>
@@ -350,6 +568,10 @@
                 <div class="px-4 py-4 sm:px-6">
                     <div class="space-y-3">
                         <div class="grid grid-cols-2 gap-3">
+                            <label class="col-span-2 flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-100 cursor-pointer">
+                                <input type="checkbox" wire:model.live="claimSudahDiklaim" class="rounded border-red-300 text-red-600 focus:ring-red-500">
+                                <span class="text-sm font-bold text-red-700">Sudah diklaim ke ekspedisi</span>
+                            </label>
                             <div>
                                 <label class="block text-xs font-bold text-gray-700 mb-1">Ekspedisi</label>
                                 <select wire:model="claimEkspedisi" class="w-full border-2 border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-red-500">

@@ -5,6 +5,7 @@ namespace App\Livewire;
 use Livewire\Component;
 use App\Models\Order;
 use App\Models\Income;
+use App\Models\SalesTarget;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -15,6 +16,8 @@ class FinancialDashboard extends Component
     public $timeRange = 'all';
     public $startDate;
     public $endDate;
+    public $targetMonth;
+    public $targetAmount = 0;
 
     // Shipping Claim
     public $showClaimModal = false;
@@ -24,6 +27,7 @@ class FinancialDashboard extends Component
     public $claimEkspedisi = '';
     public $claimTicketNumber = '';
     public $claimStatus = 'belum_diklaim';
+    public $claimSudahDiklaim = false;
     public $claimTanggalKlaim = '';
     public $claimKeterangan = '';
 
@@ -38,6 +42,56 @@ class FinancialDashboard extends Component
         }
         $this->startDate = Carbon::today()->format('Y-m-d');
         $this->endDate = Carbon::today()->format('Y-m-d');
+        $this->targetMonth = Carbon::today()->format('Y-m');
+        $this->loadTargetAmount();
+    }
+
+    public function updatedSelectedShop()
+    {
+        $this->loadTargetAmount();
+    }
+
+    public function updatedTargetMonth()
+    {
+        $this->loadTargetAmount();
+    }
+
+    public function loadTargetAmount()
+    {
+        if (!$this->selectedShop || !$this->targetMonth) {
+            $this->targetAmount = 0;
+            return;
+        }
+
+        $targetMonth = Carbon::createFromFormat('Y-m', $this->targetMonth)->startOfMonth()->toDateString();
+
+        $this->targetAmount = (float) SalesTarget::where('shop_name', $this->selectedShop)
+            ->whereDate('target_month', $targetMonth)
+            ->value('target_amount');
+    }
+
+    public function saveMonthlyTarget()
+    {
+        abort_unless(auth()->user()?->isOwner(), 403);
+
+        $this->validate([
+            'selectedShop' => 'required|string',
+            'targetMonth' => 'required|date_format:Y-m',
+            'targetAmount' => 'required|numeric|min:0',
+        ]);
+
+        SalesTarget::updateOrCreate(
+            [
+                'shop_name' => $this->selectedShop,
+                'target_month' => Carbon::createFromFormat('Y-m', $this->targetMonth)->startOfMonth()->toDateString(),
+            ],
+            [
+                'target_amount' => $this->targetAmount,
+                'created_by' => auth()->id(),
+            ]
+        );
+
+        session()->flash('success_target', 'Target bulanan toko berhasil disimpan.');
     }
 
     private function applyDateFilter($query, $dateColumn = 'created_time')
@@ -67,6 +121,8 @@ class FinancialDashboard extends Component
 
     public function openClaimModal($orderId, $trackingId, $selisih)
     {
+        abort_unless(auth()->user()?->isOwner(), 403);
+
         $this->claimOrderId = $orderId;
         $this->claimTrackingId = $trackingId ?? '';
         $this->claimSelisih = $selisih;
@@ -76,12 +132,14 @@ class FinancialDashboard extends Component
             $this->claimEkspedisi = $existing->ekspedisi;
             $this->claimTicketNumber = $existing->ticket_number;
             $this->claimStatus = $existing->status;
+            $this->claimSudahDiklaim = in_array($existing->status, ['proses_klaim', 'berhasil'], true);
             $this->claimTanggalKlaim = $existing->tanggal_klaim ? $existing->tanggal_klaim->format('Y-m-d') : '';
             $this->claimKeterangan = $existing->keterangan;
         } else {
             $this->claimEkspedisi = '';
             $this->claimTicketNumber = '';
             $this->claimStatus = 'belum_diklaim';
+            $this->claimSudahDiklaim = false;
             $this->claimTanggalKlaim = '';
             $this->claimKeterangan = '';
         }
@@ -92,11 +150,29 @@ class FinancialDashboard extends Component
     public function closeClaimModal()
     {
         $this->showClaimModal = false;
-        $this->reset(['claimOrderId', 'claimTrackingId', 'claimSelisih', 'claimEkspedisi', 'claimTicketNumber', 'claimStatus', 'claimTanggalKlaim', 'claimKeterangan']);
+        $this->reset(['claimOrderId', 'claimTrackingId', 'claimSelisih', 'claimEkspedisi', 'claimTicketNumber', 'claimStatus', 'claimSudahDiklaim', 'claimTanggalKlaim', 'claimKeterangan']);
+    }
+
+    public function updatedClaimSudahDiklaim($value)
+    {
+        if ($value && $this->claimStatus === 'belum_diklaim') {
+            $this->claimStatus = 'proses_klaim';
+        }
+
+        if (!$value && in_array($this->claimStatus, ['proses_klaim', 'berhasil'], true)) {
+            $this->claimStatus = 'belum_diklaim';
+        }
+    }
+
+    public function updatedClaimStatus($value)
+    {
+        $this->claimSudahDiklaim = in_array($value, ['proses_klaim', 'berhasil'], true);
     }
 
     public function saveClaim()
     {
+        abort_unless(auth()->user()?->isOwner(), 403);
+
         $this->validate([
             'claimOrderId' => 'required|string',
             'claimEkspedisi' => 'nullable|string|max:50',
@@ -127,6 +203,19 @@ class FinancialDashboard extends Component
     public function toggleComparison()
     {
         $this->showComparison = !$this->showComparison;
+    }
+
+    private function calculateHppOverhead($orders): float
+    {
+        $skuCosts = \App\Models\ProductCost::whereIn('sku_id', $orders->pluck('sku_id')->filter()->unique())
+            ->get()
+            ->keyBy('sku_id');
+
+        return (float) $orders->sum(function ($order) use ($skuCosts) {
+            $cost = $skuCosts->get($order->sku_id);
+
+            return $cost ? $order->quantity * ($cost->hpp_amount + $cost->overhead_per_pack) : 0;
+        });
     }
 
     public function render()
@@ -170,6 +259,21 @@ class FinancialDashboard extends Component
                 $pesananBelumCairList->push($order);
             }
         }
+
+        $returnRefundCandidates = $pesananBelumCairList
+            ->map(function ($order) {
+                $createdAt = $order->created_time ? Carbon::parse($order->created_time) : null;
+                $order->days_pending = $createdAt ? (int) $createdAt->diffInDays(now()) : 0;
+                $order->refund_risk = $order->days_pending >= 14 ? 'tinggi' : 'pantau';
+
+                return $order;
+            })
+            ->filter(fn ($order) => $order->days_pending >= 7)
+            ->sortByDesc('days_pending')
+            ->values();
+
+        $returnRefundHighRisk = $returnRefundCandidates->where('refund_risk', 'tinggi')->count();
+        $returnRefundAmount = $returnRefundCandidates->sum('order_amount');
 
         $profitBersihRiil = $totalCairBersih - $totalHppDanOverhead;
 
@@ -269,6 +373,26 @@ class FinancialDashboard extends Component
             ->orderBy('total_terjual', 'desc')
             ->get();
 
+        $targetMonthStart = Carbon::createFromFormat('Y-m', $this->targetMonth ?: Carbon::today()->format('Y-m'))->startOfMonth();
+        $targetMonthEnd = $targetMonthStart->copy()->endOfMonth();
+        $targetSalesQuery = Order::query()
+            ->where('order_status', '!=', 'Cancelled')
+            ->whereBetween('created_time', [$targetMonthStart, $targetMonthEnd]);
+
+        if ($this->selectedShop) {
+            $targetSalesQuery->where('shop_name', $this->selectedShop);
+            $monthlyTarget = (float) SalesTarget::where('shop_name', $this->selectedShop)
+                ->whereDate('target_month', $targetMonthStart->toDateString())
+                ->value('target_amount');
+        } else {
+            $monthlyTarget = (float) SalesTarget::whereDate('target_month', $targetMonthStart->toDateString())
+                ->sum('target_amount');
+        }
+
+        $monthlySales = (float) $targetSalesQuery->sum('order_amount');
+        $targetProgress = $monthlyTarget > 0 ? min(($monthlySales / $monthlyTarget) * 100, 100) : 0;
+        $targetRemaining = max($monthlyTarget - $monthlySales, 0);
+
         // MoM Comparison
         $comparisonData = null;
         if ($this->showComparison && $this->timeRange !== 'custom') {
@@ -297,15 +421,25 @@ class FinancialDashboard extends Component
 
             $lastOmset = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->sum('order_amount');
             $lastCair = $lastIncomeQuery->clone()->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
-            $lastOrderCount = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->count();
+            $lastOrders = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->get();
+            $lastOrderCount = $lastOrders->count();
+            $lastHppOverhead = $this->calculateHppOverhead($lastOrders);
+            $lastProfit = $lastCair - $lastHppOverhead;
+            $currentOrderCount = $orders->count();
+            $comparisonMax = max($totalOmsetKotor, $lastOmset, abs($profitBersihRiil), abs($lastProfit), $currentOrderCount, $lastOrderCount, 1);
 
             $comparisonData = [
                 'period_label' => $lastPeriodStart->format('d M') . ' - ' . $lastPeriodEnd->format('d M Y'),
                 'omset' => $lastOmset,
                 'cair' => $lastCair,
                 'order_count' => $lastOrderCount,
+                'profit' => $lastProfit,
+                'current_order_count' => $currentOrderCount,
+                'max_value' => $comparisonMax,
                 'omset_delta' => $lastOmset > 0 ? (($totalOmsetKotor - $lastOmset) / $lastOmset) * 100 : 0,
                 'cair_delta' => $lastCair > 0 ? (($totalCairBersih - $lastCair) / $lastCair) * 100 : 0,
+                'profit_delta' => $lastProfit != 0 ? (($profitBersihRiil - $lastProfit) / abs($lastProfit)) * 100 : 0,
+                'order_delta' => $lastOrderCount > 0 ? (($currentOrderCount - $lastOrderCount) / $lastOrderCount) * 100 : 0,
             ];
         }
 
@@ -317,6 +451,9 @@ class FinancialDashboard extends Component
             'profitBersih' => $profitBersihRiil,
             'totalDanaMenggantung' => $totalDanaMenggantung,
             'pesananBelumCairList' => $pesananBelumCairList,
+            'returnRefundCandidates' => $returnRefundCandidates,
+            'returnRefundHighRisk' => $returnRefundHighRisk,
+            'returnRefundAmount' => $returnRefundAmount,
             'anomaliOngkirList' => $anomaliOngkir,
             'skuTrendingList' => $skuTrendingList,
             'skuProfitList' => $skuProfitList,
@@ -326,6 +463,12 @@ class FinancialDashboard extends Component
             'totalPotensiKlaim' => $totalPotensiKlaim,
             'totalSudahDiklaim' => $totalSudahDiklaim,
             'comparisonData' => $comparisonData,
+            'monthlyTarget' => $monthlyTarget,
+            'monthlySales' => $monthlySales,
+            'targetProgress' => $targetProgress,
+            'targetRemaining' => $targetRemaining,
+            'targetMonthLabel' => $targetMonthStart->translatedFormat('F Y'),
+            'isOwner' => auth()->user()?->isOwner() ?? false,
         ]);
     }
 }

@@ -27,6 +27,7 @@ new #[Layout('layouts.guest')] class extends Component
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
+        $validated['role'] = User::query()->exists() ? 'operator' : 'owner';
 
         event(new Registered($user = User::create($validated)));
 

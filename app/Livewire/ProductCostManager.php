@@ -23,6 +23,11 @@ class ProductCostManager extends Component
     public $historySku = null;
     public $historyRecords = [];
 
+    public function mount()
+    {
+        abort_unless(auth()->user()?->isOwner(), 403);
+    }
+
     public function sortBy($field)
     {
         if ($this->sortField === $field) {
