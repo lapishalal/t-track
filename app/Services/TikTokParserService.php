@@ -65,7 +65,7 @@ class TikTokParserService
 
                 // 2. Simpan atau perbarui data operasional pesanan
                 Order::updateOrCreate(
-                    ['order_id' => $data['Order ID']],
+                    ['order_id' => trim($data['Order ID'])],
                     [
                         'batch_id'               => $batchId, // TAMBAHAN: Ikat data pesanan ini ke file induknya
                         'sku_id'                 => $data['SKU ID'],

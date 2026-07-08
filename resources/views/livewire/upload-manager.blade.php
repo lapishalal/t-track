@@ -1,20 +1,33 @@
-<div class="p-6 bg-white rounded-lg shadow-sm">
-    <h2 class="text-xl font-semibold text-gray-800 mb-6">Pusat Unggah Berkas TikTok Shop</h2>
+<div class="p-6 bg-white rounded-lg shadow-sm border border-gray-200">
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-6">
+        <div>
+            <h2 class="text-xl font-semibold text-gray-800">Pusat Unggah Berkas TikTok Shop</h2>
+            <p class="text-sm text-gray-500 mt-1">Isi nama toko sekali, lalu unggah file pesanan dan income untuk toko yang sama.</p>
+        </div>
+        <div class="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-800 max-w-md">
+            <p class="font-bold">Urutan yang disarankan</p>
+            <p class="mt-1">Unggah file pesanan terlebih dahulu, kemudian file income. Ini membantu pencocokan order, dana cair, ongkir, dan retur/refund.</p>
+        </div>
+    </div>
 
     <!-- Form Input Nama Toko -->
-    <div class="mb-6 max-w-md">
-        <label class="block text-sm font-medium text-gray-700 mb-2">1. Masukkan Nama Toko / Tenant</label>
-        <input type="text" wire:model="shop_name" placeholder="Contoh: MS Glow Official, Pinang Living" 
-               class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+    <div class="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <label class="block text-sm font-bold text-gray-800 mb-2">1. Nama Toko / Tenant</label>
+        <input type="text" wire:model.live.debounce.400ms="shop_name" placeholder="Contoh: MS Glow Official, Pinang Living"
+               class="w-full max-w-xl px-4 py-2.5 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+        <p class="mt-2 text-xs text-gray-500">Nama ini akan disimpan ke semua baris order dan income. Pastikan sama untuk file pesanan dan income toko tersebut.</p>
         @error('shop_name') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         <!-- Box Kiri: Upload Berkas Semua Pesanan -->
-        <div class="border border-gray-200 rounded-lg p-5 bg-gray-50">
-            <h3 class="font-medium text-gray-700 mb-2">2a. File Semua Pesanan (.csv)</h3>
-            <p class="text-xs text-gray-500 mb-4">Gunakan file berkode nama depan "Semua pesanan-xxx"</p>
+        <div class="border border-indigo-100 rounded-lg p-5 bg-indigo-50/40">
+            <div class="mb-4">
+                <span class="inline-flex px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase">Langkah 2A</span>
+                <h3 class="font-semibold text-gray-800 mt-2">File Semua Pesanan</h3>
+                <p class="text-xs text-gray-500 mt-1">Terima `.csv`, `.xlsx`, atau `.xls`. Format wajib punya kolom Order ID, Order Status, dan SKU ID.</p>
+            </div>
 
             @if (session()->has('success_order'))
                 <div class="p-3 bg-green-100 text-green-800 rounded mb-3 text-sm font-medium">
@@ -28,23 +41,33 @@
             @endif
 
             <form wire:submit.prevent="processOrder">
-                <input type="file" wire:model="file_order" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                <input type="file" wire:model="file_order" accept=".csv,.xlsx,.xls" class="w-full rounded-md border border-dashed border-indigo-200 bg-white p-3 text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
                 @error('file_order') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
 
-                <div class="mt-4 flex items-center justify-between">
-                    <button type="submit" wire:loading.attr="disabled" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium shadow-sm disabled:opacity-50">
+                <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <button type="submit" wire:loading.attr="disabled" @disabled(blank($shop_name) || !$file_order) class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                         Proses File Pesanan
                     </button>
-                    <span wire:loading wire:target="file_order" class="text-xs text-amber-600 animate-pulse">Mengunggah ke server...</span>
-                    <span wire:loading wire:target="processOrder" class="text-xs text-indigo-600 font-medium">Sedang memproses data...</span>
+                    <div class="text-xs">
+                        @if(blank($shop_name))
+                            <span class="text-amber-700">Isi nama toko terlebih dahulu.</span>
+                        @elseif(!$file_order)
+                            <span class="text-gray-500">Pilih file pesanan untuk mengaktifkan tombol.</span>
+                        @endif
+                        <span wire:loading wire:target="file_order" class="text-amber-600 animate-pulse">Mengunggah ke server...</span>
+                        <span wire:loading wire:target="processOrder" class="text-indigo-600 font-medium">Sedang memproses data...</span>
+                    </div>
                 </div>
             </form>
         </div>
 
         <!-- Box Kanan: Upload Berkas Income -->
-        <div class="border border-gray-200 rounded-lg p-5 bg-gray-50">
-            <h3 class="font-medium text-gray-700 mb-2">2b. File Laporan Keuangan / Income (.xlsx)</h3>
-            <p class="text-xs text-gray-500 mb-4">Gunakan file berkode nama depan "income_xxxx"</p>
+        <div class="border border-emerald-100 rounded-lg p-5 bg-emerald-50/40">
+            <div class="mb-4">
+                <span class="inline-flex px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase">Langkah 2B</span>
+                <h3 class="font-semibold text-gray-800 mt-2">File Laporan Keuangan / Income</h3>
+                <p class="text-xs text-gray-500 mt-1">Gunakan export income yang memiliki sheet `Detail pesanan`.</p>
+            </div>
 
             @if (session()->has('success_income'))
                 <div class="p-3 bg-green-100 text-green-800 rounded mb-3 text-sm font-medium">
@@ -58,15 +81,22 @@
             @endif
 
             <form wire:submit.prevent="processIncome">
-                <input type="file" wire:model="file_income" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
+                <input type="file" wire:model="file_income" accept=".xlsx,.xls,.csv" class="w-full rounded-md border border-dashed border-emerald-200 bg-white p-3 text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
                 @error('file_income') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
 
-                <div class="mt-4 flex items-center justify-between">
-                    <button type="submit" wire:loading.attr="disabled" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-medium shadow-sm disabled:opacity-50">
+                <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <button type="submit" wire:loading.attr="disabled" @disabled(blank($shop_name) || !$file_income) class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                         Proses File Income
                     </button>
-                    <span wire:loading wire:target="file_income" class="text-xs text-amber-600 animate-pulse">Mengunggah ke server...</span>
-                    <span wire:loading wire:target="processIncome" class="text-xs text-emerald-600 font-medium">Sedang memproses dana...</span>
+                    <div class="text-xs">
+                        @if(blank($shop_name))
+                            <span class="text-amber-700">Isi nama toko terlebih dahulu.</span>
+                        @elseif(!$file_income)
+                            <span class="text-gray-500">Pilih file income untuk mengaktifkan tombol.</span>
+                        @endif
+                        <span wire:loading wire:target="file_income" class="text-amber-600 animate-pulse">Mengunggah ke server...</span>
+                        <span wire:loading wire:target="processIncome" class="text-emerald-600 font-medium">Sedang memproses dana...</span>
+                    </div>
                 </div>
             </form>
         </div>

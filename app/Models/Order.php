@@ -23,7 +23,14 @@ class Order extends Model
         'regency_city',
         'tracking_id',
         'created_time',
-        'batch_id'
+        'batch_id',
+        'audited_at',
+        'hidden_at'
+    ];
+
+    protected $casts = [
+        'audited_at' => 'datetime',
+        'hidden_at' => 'datetime',
     ];
 
     // Hubungan 1 to 1 dari Order ke data Keuangan (Income)

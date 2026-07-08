@@ -34,6 +34,10 @@ class FinancialDashboard extends Component
     // MoM Comparison
     public $showComparison = false;
 
+    // Sort imported orders
+    public $sortField = 'created_time';
+    public $sortDirection = 'desc';
+
     public function mount()
     {
         $this->shops = Order::select('shop_name')->distinct()->pluck('shop_name')->toArray();
@@ -106,6 +110,9 @@ class FinancialDashboard extends Component
             case 'this_month':
                 return $query->whereMonth($dateColumn, Carbon::now()->month)
                              ->whereYear($dateColumn, Carbon::now()->year);
+            case 'last_month':
+                return $query->whereMonth($dateColumn, Carbon::now()->subMonth()->month)
+                             ->whereYear($dateColumn, Carbon::now()->subMonth()->year);
             case 'custom':
                 if ($this->startDate && $this->endDate) {
                     return $query->whereBetween($dateColumn, [
@@ -218,32 +225,90 @@ class FinancialDashboard extends Component
         });
     }
 
+    public function markAsAudited($orderId)
+    {
+        $order = Order::where('order_id', $orderId)->first();
+        if ($order && !$order->audited_at) {
+            $order->update(['audited_at' => now()]);
+            session()->flash('success_audit', 'Pesanan ' . $orderId . ' telah ditandai sudah diaudit.');
+        }
+    }
+
+    public function hideOrder($orderId)
+    {
+        $order = Order::where('order_id', $orderId)->first();
+        if ($order && !$order->hidden_at) {
+            $order->update(['hidden_at' => now()]);
+        }
+    }
+
+    public function sortBy($field)
+    {
+        if ($this->sortField === $field) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortField = $field;
+            $this->sortDirection = 'asc';
+        }
+    }
+
     public function render()
     {
         $orderQuery = Order::query()->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop));
-        $incomeQuery = Income::query()->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop));
-
         $orderQuery = $this->applyDateFilter($orderQuery, 'created_time');
-        $incomeQuery = $this->applyDateFilter($incomeQuery, 'payout_time');
 
-        $totalOmsetKotor = $orderQuery->clone()->where('order_status', '!=', 'Cancelled')->sum('order_amount');
-        $totalCairBersih = $incomeQuery->clone()->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
-        $totalBiayaAdmin = $incomeQuery->clone()->sum(DB::raw('platform_commission_fee + payment_fee'));
+        // Non-cancelled orders = financial cohort
+        $orders = $orderQuery->clone()->where('order_status', '!=', 'Cancelled')->get();
 
-        $allIncomeOrderIds = Income::query()
+        // All orders in period (including cancelled, for tracking display)
+        $allOrdersInPeriod = $orderQuery->clone()->get();
+
+        // Cohort-based incomes: get incomes matching cohort order IDs, regardless of payout_time
+        $cohortOrderIdSet = $orders->pluck('order_id')
+            ->map(fn($id) => trim($id))
+            ->filter()
+            ->unique();
+
+        $allShopIncomes = Income::query()
+            ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+            ->get();
+
+        // Deduplicate: ambil income TERAKHIR per order_id (berdasarkan payout_time lalu id)
+        $latestIncomePerOrder = $allShopIncomes
+            ->groupBy(fn($income) => trim($income->order_id))
+            ->map(function ($group) {
+                return $group->sortByDesc([
+                    fn($item) => $item->payout_time ? Carbon::parse($item->payout_time)->timestamp : 0,
+                    fn($item) => $item->id,
+                ])->first();
+            });
+
+        $incomeMap = $latestIncomePerOrder->filter(
+            fn($income, $orderId) => $cohortOrderIdSet->contains($orderId)
+        );
+        $incomeOrderIds = $incomeMap->keys()->toArray();
+        $incomeCohort = $incomeMap;
+
+        // Cari income yang order_id-nya tidak cocok dengan order manapun
+        $allOrderIdsInDb = Order::query()
             ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
             ->pluck('order_id')
             ->map(fn($id) => trim($id))
+            ->filter()
+            ->unique()
+            ->values()
             ->toArray();
 
-        $incomeMap = Income::query()
-            ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
-            ->get()
-            ->keyBy(fn($income) => trim($income->order_id));
+        $unmatchedIncomeList = $allShopIncomes->filter(
+            fn($income) => !in_array(trim($income->order_id), $allOrderIdsInDb)
+        )->values();
 
+        $totalOmsetKotor = (float) $orders->sum('order_amount');
+        $totalCairBersih = (float) $incomeCohort->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
+        $totalBiayaAdmin = (float) $incomeCohort->sum('platform_commission_fee') + $incomeCohort->sum('payment_fee');
+
+        // HPP & Overhead dari cohort orders
         $totalHppDanOverhead = 0;
-        $orders = $orderQuery->clone()->where('order_status', '!=', 'Cancelled')->with('income')->get();
-
         foreach ($orders as $order) {
             $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
             if ($cost) {
@@ -251,12 +316,21 @@ class FinancialDashboard extends Component
             }
         }
 
+        // Belum Cair (non-cancelled only, untuk financial + return/refund tracker)
         $totalDanaMenggantung = 0;
         $pesananBelumCairList = collect();
         foreach ($orders as $order) {
-            if ($order->order_status !== 'Cancelled' && !in_array(trim($order->order_id), $allIncomeOrderIds)) {
+            if (!in_array(trim($order->order_id), $incomeOrderIds)) {
                 $totalDanaMenggantung += $order->order_amount;
                 $pesananBelumCairList->push($order);
+            }
+        }
+
+        // ALL pending orders (including cancelled/return, for display tracking)
+        $allPendingOrdersList = collect();
+        foreach ($allOrdersInPeriod as $order) {
+            if (!in_array(trim($order->order_id), $incomeOrderIds)) {
+                $allPendingOrdersList->push($order);
             }
         }
 
@@ -268,6 +342,7 @@ class FinancialDashboard extends Component
 
                 return $order;
             })
+            ->reject(fn ($order) => $order->audited_at)
             ->filter(fn ($order) => $order->days_pending >= 7)
             ->sortByDesc('days_pending')
             ->values();
@@ -275,17 +350,37 @@ class FinancialDashboard extends Component
         $returnRefundHighRisk = $returnRefundCandidates->where('refund_risk', 'tinggi')->count();
         $returnRefundAmount = $returnRefundCandidates->sum('order_amount');
 
+        // Daftar Pesanan Terimport
+        $importedOrdersList = $allOrdersInPeriod
+            ->reject(fn($o) => $o->hidden_at)
+            ->map(function ($order) use ($incomeMap) {
+                $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
+                $hpp = $cost ? $order->quantity * (float) $cost->hpp_amount : 0;
+                $trimmedId = trim($order->order_id);
+                $incomeRecord = $incomeMap->get($trimmedId);
+                $disbursement = $incomeRecord ? (float) $incomeRecord->disbursement_amount : 0;
+                $isCair = $disbursement > 0;
+                $order->hpp_amount = $hpp;
+                $order->overhead = $cost ? $order->quantity * (float) $cost->overhead_per_pack : 0;
+                $order->omset_real = $isCair ? $disbursement : 0;
+                $order->is_cair = $isCair;
+                return $order;
+            })
+            ->sortBy($this->sortField, SORT_REGULAR, $this->sortDirection === 'desc')
+            ->values();
+
+        // Net Profit = cohort-based (consistent)
         $profitBersihRiil = $totalCairBersih - $totalHppDanOverhead;
 
-        // Profit Breakdown per SKU
+        // Profit Breakdown per SKU (menggunakan cohort income)
         $skuProfitMap = [];
         foreach ($orders as $order) {
             $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
             $trimmedOrderId = trim($order->order_id);
             $incomeRecord = $incomeMap->get($trimmedOrderId);
-            $cair = $incomeRecord ? $incomeRecord->disbursement_amount : 0;
-            $hpp = $cost ? $order->quantity * $cost->hpp_amount : 0;
-            $overhead = $cost ? $order->quantity * $cost->overhead_per_pack : 0;
+            $cair = $incomeRecord ? (float) $incomeRecord->disbursement_amount : 0;
+            $hpp = $cost ? $order->quantity * (float) $cost->hpp_amount : 0;
+            $overhead = $cost ? $order->quantity * (float) $cost->overhead_per_pack : 0;
             $profit = $cair - ($hpp + $overhead);
 
             if (!isset($skuProfitMap[$order->sku_id])) {
@@ -297,7 +392,7 @@ class FinancialDashboard extends Component
                 ];
             }
             $skuProfitMap[$order->sku_id]['total_sold'] += $order->quantity;
-            $skuProfitMap[$order->sku_id]['total_omset'] += $order->order_amount;
+            $skuProfitMap[$order->sku_id]['total_omset'] += (float) $order->order_amount;
             $skuProfitMap[$order->sku_id]['total_cair'] += $cair;
             $skuProfitMap[$order->sku_id]['total_hpp'] += $hpp;
             $skuProfitMap[$order->sku_id]['total_overhead'] += $overhead;
@@ -316,11 +411,11 @@ class FinancialDashboard extends Component
                 ];
             }
             $provinceMap[$province]['total_orders']++;
-            $provinceMap[$province]['total_omset'] += $order->order_amount;
-            $provinceMap[$province]['total_shipping'] += $order->shipping_fee_estimated ?? 0;
-            if (!in_array(trim($order->order_id), $allIncomeOrderIds)) {
+            $provinceMap[$province]['total_omset'] += (float) $order->order_amount;
+            $provinceMap[$province]['total_shipping'] += (float) ($order->shipping_fee_estimated ?? 0);
+            if (!in_array(trim($order->order_id), $incomeOrderIds)) {
                 $provinceMap[$province]['pending_orders']++;
-                $provinceMap[$province]['pending_amount'] += $order->order_amount;
+                $provinceMap[$province]['pending_amount'] += (float) $order->order_amount;
             }
         }
         $provinceList = collect($provinceMap)
@@ -331,22 +426,27 @@ class FinancialDashboard extends Component
             ->sortByDesc('total_orders')
             ->values();
 
-        // Anomali Ongkir
-        $anomaliOngkir = Order::query()
-            ->when($this->selectedShop, fn($q) => $q->where('orders.shop_name', $this->selectedShop))
-            ->whereIn('orders.order_id', $orderQuery->clone()->pluck('order_id')->toArray())
-            ->join('incomes', DB::raw('TRIM(orders.order_id)'), '=', DB::raw('TRIM(incomes.order_id)'))
-            ->select(
-                'orders.order_id', 'orders.product_name', 'orders.tracking_id',
-                'orders.shipping_fee_estimated as estimasi',
-                'incomes.shipping_fee_real as riil',
-                DB::raw('(incomes.shipping_fee_real - orders.shipping_fee_estimated) as selisih_rugi'),
-                DB::raw('(incomes.shipping_fee_real / NULLIF(orders.shipping_fee_estimated, 0)) as rasio_bengkak')
-            )
-            ->where('incomes.shipping_fee_real', '>', 0)
-            ->whereRaw('incomes.shipping_fee_real > orders.shipping_fee_estimated')
-            ->orderBy('selisih_rugi', 'desc')
-            ->get();
+        // Anomali Ongkir (gunakan incomeMap yang sudah di-dedup)
+        $anomaliOngkir = collect();
+        foreach ($allOrdersInPeriod as $order) {
+            $incomeRecord = $incomeMap->get(trim($order->order_id));
+            if (!$incomeRecord) continue;
+            $riil = (float) $incomeRecord->shipping_fee_real;
+            $estimasi = (float) $order->shipping_fee_estimated;
+            if ($riil == 0) continue;
+            $riilAbs = abs($riil);
+            if ($riilAbs <= $estimasi) continue;
+            $anomaliOngkir->push((object) [
+                'order_id' => $order->order_id,
+                'product_name' => $order->product_name,
+                'tracking_id' => $order->tracking_id,
+                'estimasi' => $estimasi,
+                'riil' => $riilAbs,
+                'selisih_rugi' => $riilAbs - $estimasi,
+                'rasio_bengkak' => $estimasi > 0 ? $riilAbs / $estimasi : null,
+            ]);
+        }
+        $anomaliOngkir = $anomaliOngkir->sortByDesc('selisih_rugi')->values();
 
         $claimOrderIds = \App\Models\ShippingClaim::pluck('order_id')->map(fn($id) => trim($id))->toArray();
         $claimsMap = \App\Models\ShippingClaim::all()->keyBy(fn($c) => trim($c->order_id));
@@ -414,14 +514,22 @@ class FinancialDashboard extends Component
             $lastOrderQuery = Order::query()
                 ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
                 ->whereBetween('created_time', [$lastPeriodStart, $lastPeriodEnd]);
-            
-            $lastIncomeQuery = Income::query()
-                ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
-                ->whereBetween('payout_time', [$lastPeriodStart, $lastPeriodEnd]);
 
-            $lastOmset = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->sum('order_amount');
-            $lastCair = $lastIncomeQuery->clone()->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
             $lastOrders = $lastOrderQuery->clone()->where('order_status', '!=', 'Cancelled')->get();
+            $lastOrderIds = $lastOrders->pluck('order_id')
+                ->map(fn($id) => trim($id))
+                ->filter()
+                ->unique()
+                ->values()
+                ->toArray();
+
+            $lastIncomeCohort = Income::query()
+                ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+                ->whereIn('order_id', $lastOrderIds)
+                ->get();
+
+            $lastOmset = (float) $lastOrders->sum('order_amount');
+            $lastCair = (float) $lastIncomeCohort->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
             $lastOrderCount = $lastOrders->count();
             $lastHppOverhead = $this->calculateHppOverhead($lastOrders);
             $lastProfit = $lastCair - $lastHppOverhead;
@@ -451,6 +559,8 @@ class FinancialDashboard extends Component
             'profitBersih' => $profitBersihRiil,
             'totalDanaMenggantung' => $totalDanaMenggantung,
             'pesananBelumCairList' => $pesananBelumCairList,
+            'allPendingOrdersList' => $allPendingOrdersList,
+            'unmatchedIncomeList' => $unmatchedIncomeList,
             'returnRefundCandidates' => $returnRefundCandidates,
             'returnRefundHighRisk' => $returnRefundHighRisk,
             'returnRefundAmount' => $returnRefundAmount,
@@ -463,6 +573,7 @@ class FinancialDashboard extends Component
             'totalPotensiKlaim' => $totalPotensiKlaim,
             'totalSudahDiklaim' => $totalSudahDiklaim,
             'comparisonData' => $comparisonData,
+            'importedOrdersList' => $importedOrdersList,
             'monthlyTarget' => $monthlyTarget,
             'monthlySales' => $monthlySales,
             'targetProgress' => $targetProgress,

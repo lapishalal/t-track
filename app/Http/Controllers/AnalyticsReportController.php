@@ -21,24 +21,43 @@ class AnalyticsReportController extends Controller
         $targetMonth = $request->query('target_month', Carbon::today()->format('Y-m'));
 
         $orderQuery = Order::query()->when($selectedShop, fn ($q) => $q->where('shop_name', $selectedShop));
-        $incomeQuery = Income::query()->when($selectedShop, fn ($q) => $q->where('shop_name', $selectedShop));
 
         $this->applyDateFilter($orderQuery, 'created_time', $timeRange, $startDate, $endDate);
-        $this->applyDateFilter($incomeQuery, 'payout_time', $timeRange, $startDate, $endDate);
 
         $orders = $orderQuery->clone()
             ->where('order_status', '!=', 'Cancelled')
-            ->with('income')
             ->get();
 
-        $incomeMap = Income::query()
+        // Cohort-based incomes: get incomes matching these orders, regardless of payout_time
+        $cohortOrderIds = $orders->pluck('order_id')
+            ->map(fn($id) => trim($id))
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $allShopIncomes = Income::query()
             ->when($selectedShop, fn ($q) => $q->where('shop_name', $selectedShop))
-            ->get()
-            ->keyBy(fn ($income) => trim($income->order_id));
+            ->get();
+
+        // Deduplicate: ambil income TERAKHIR per order_id
+        $latestIncomePerOrder = $allShopIncomes
+            ->groupBy(fn($income) => trim($income->order_id))
+            ->map(function ($group) {
+                return $group->sortByDesc([
+                    fn($item) => $item->payout_time ? Carbon::parse($item->payout_time)->timestamp : 0,
+                    fn($item) => $item->id,
+                ])->first();
+            });
+
+        $incomeMap = $latestIncomePerOrder->filter(
+            fn($income, $orderId) => in_array($orderId, $cohortOrderIds)
+        );
+        $incomeCohort = $incomeMap;
 
         $totalOmsetKotor = (float) $orders->sum('order_amount');
-        $totalCairBersih = (float) $incomeQuery->clone()->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
-        $totalBiayaAdmin = (float) $incomeQuery->clone()->sum(DB::raw('platform_commission_fee + payment_fee'));
+        $totalCairBersih = (float) $incomeCohort->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
+        $totalBiayaAdmin = (float) $incomeCohort->sum('platform_commission_fee') + $incomeCohort->sum('payment_fee');
 
         $totalHppDanOverhead = 0;
         $skuProfitMap = [];

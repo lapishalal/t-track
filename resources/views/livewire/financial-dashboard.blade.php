@@ -24,6 +24,7 @@
                     <option value="yesterday">Kemarin</option>
                     <option value="7_days">7 Hari Terakhir</option>
                     <option value="this_month">Bulan Ini</option>
+                    <option value="last_month">Bulan Lalu</option>
                     <option value="custom">Pilih Tanggal Kustom 📅</option>
                 </select>
             </div>
@@ -48,6 +49,7 @@
         </div>
     @endif
 
+    @if(false)
     <!-- Target Bulanan & Report -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 p-4 bg-white rounded-lg shadow-sm border border-sky-100">
@@ -64,7 +66,6 @@
                     <p class="text-2xl font-bold text-sky-700">{{ number_format($targetProgress, 1) }}%</p>
                 </div>
             </div>
-
             <div class="mt-4">
                 <div class="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
                     <div class="h-full bg-sky-600 rounded-full transition-all duration-300" style="width: {{ $targetProgress }}%"></div>
@@ -84,7 +85,6 @@
                     </div>
                 </div>
             </div>
-
             @if($isOwner)
                 <div class="mt-4 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-end gap-3">
                     <div>
@@ -102,7 +102,6 @@
                 </div>
             @endif
         </div>
-
         <div class="p-4 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col justify-between">
             <div>
                 <p class="text-xs font-bold uppercase text-gray-500 tracking-wider">Investor / Owner Report</p>
@@ -117,6 +116,7 @@
             </a>
         </div>
     </div>
+    @endif
 
     <!-- Tombol Toggle MoM Comparison -->
     <div class="flex justify-end mb-2">
@@ -154,7 +154,7 @@
         <div class="p-4 bg-white border border-amber-200 rounded-lg shadow-sm bg-gradient-to-br from-white to-amber-50">
             <p class="text-xs font-medium text-amber-700 uppercase tracking-wider">⚠️ Belum Cair</p>
             <p class="text-xl font-bold text-amber-800 mt-1">Rp {{ number_format($totalDanaMenggantung, 0, ',', '.') }}</p>
-            <span class="text-[10px] text-amber-600 font-medium">Uang tertahan di TikTok</span>
+            <span class="text-[10px] text-amber-600 font-medium">{{ $pesananBelumCairList->count() }} order perlu dipantau</span>
         </div>
         <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <p class="text-xs font-medium text-gray-500 uppercase tracking-wider">HPP & Overhead</p>
@@ -165,6 +165,130 @@
             <p class="text-xl font-bold mt-1">Rp {{ number_format($profitBersih, 0, ',', '.') }}</p>
         </div>
     </div>
+
+    <!-- DAFTAR PESANAN TERIMPORT -->
+    <div class="p-5 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-[400px]">
+        <div class="mb-4 flex justify-between items-center">
+            <div>
+                <h4 class="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 bg-gray-700 rounded-full"></span>
+                    Daftar Pesanan Terimport
+                </h4>
+                <p class="text-[11px] text-gray-500">Semua pesanan yang telah diimpor dari TikTok.</p>
+            </div>
+            <span class="text-xs font-medium bg-gray-100 text-gray-700 px-2.5 py-1 rounded">{{ $importedOrdersList->count() }} pesanan</span>
+        </div>
+        <div class="overflow-y-auto flex-grow max-h-56 border border-gray-100 rounded">
+            <table class="min-w-full w-full divide-y divide-gray-200 text-xs table-fixed">
+                <thead class="bg-gray-100 text-gray-700 font-semibold uppercase sticky top-0 z-10">
+                    <tr>
+                        <th class="px-2 py-2 text-center w-8">No</th>
+                        <th class="px-2 py-2 text-left w-[80px] cursor-pointer select-none hover:text-indigo-600" wire:click="sortBy('created_time')">
+                            Tanggal
+                            @if($sortField === 'created_time') <span class="text-indigo-600">{{ $sortDirection === 'asc' ? '▲' : '▼' }}</span> @endif
+                        </th>
+                        <th class="px-2 py-2 text-left w-[110px]">ID Pesanan</th>
+                        <th class="px-2 py-2 text-left">Produk / Varian</th>
+                        <th class="px-2 py-2 text-right w-[90px]">Omset</th>
+                        <th class="px-2 py-2 text-right w-[80px]">HPP</th>
+                        <th class="px-2 py-2 text-right w-[90px]">Profit</th>
+                        <th class="px-2 py-2 text-center w-[70px] cursor-pointer select-none hover:text-indigo-600" wire:click="sortBy('order_status')">
+                            Status
+                            @if($sortField === 'order_status') <span class="text-indigo-600">{{ $sortDirection === 'asc' ? '▲' : '▼' }}</span> @endif
+                        </th>
+                        <th class="px-2 py-2 text-center w-[65px]">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-gray-600">
+                    @forelse($importedOrdersList as $order)
+                        @php
+                            $statusLower = trim($order->order_status ?? '');
+                            $isCancelled = $statusLower === 'Dibatalkan';
+                            $isUnpaid = $statusLower === 'Belum dibayar';
+                            $showHideBtn = $isCancelled || $isUnpaid;
+                            $rowBg = $isCancelled ? 'bg-red-50/20 hover:bg-red-50/40' : ($isUnpaid ? 'bg-yellow-50/20 hover:bg-yellow-50/40' : 'hover:bg-gray-50/40');
+                            $statusBadge = $isCancelled ? 'bg-red-100 text-red-700' : ($isUnpaid ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700');
+                        @endphp
+                        <tr class="{{ $rowBg }} transition">
+                            <td class="px-2 py-2 text-center text-gray-400">{{ $loop->iteration }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap text-[10px]">{{ $order->created_time ? \Carbon\Carbon::parse($order->created_time)->format('d/m/Y') : '-' }}</td>
+                            <td class="px-2 py-2 font-mono text-indigo-600 text-[9px] break-all">{{ $order->order_id }}</td>
+                            <td class="px-2 py-2 whitespace-normal break-words text-[10px] leading-tight">{{ $order->product_name }}@if($order->variation)<br><span class="text-gray-400 text-[9px]">{{ $order->variation }}</span>@endif</td>
+                            @if($order->is_cair)
+                                @php
+                                    $totalHpp = $order->hpp_amount + $order->overhead;
+                                    $profitValue = $order->omset_real - $totalHpp;
+                                @endphp
+                                <td class="px-2 py-2 text-right font-medium text-[10px]">Rp{{ number_format($order->omset_real, 0, ',', '.') }}</td>
+                                <td class="px-2 py-2 text-right text-gray-500 text-[10px]">Rp{{ number_format($totalHpp, 0, ',', '.') }}</td>
+                                <td class="px-2 py-2 text-right font-bold text-[10px] {{ $profitValue >= 0 ? 'text-emerald-700' : 'text-red-600' }}">Rp{{ number_format($profitValue, 0, ',', '.') }}</td>
+                            @else
+                                <td class="px-2 py-2 text-right text-gray-300 text-[10px]">-</td>
+                                <td class="px-2 py-2 text-right text-gray-300 text-[10px]">-</td>
+                                <td class="px-2 py-2 text-right text-gray-300 text-[10px]">-</td>
+                            @endif
+                            <td class="px-2 py-2 text-center"><span class="px-1 py-0.5 rounded text-[8px] font-bold {{ $statusBadge }}">{{ $order->order_status ?: '-' }}</span></td>
+                            <td class="px-2 py-2 text-center">
+                                @if($showHideBtn)
+                                    <button wire:click="hideOrder('{{ $order->order_id }}')"
+                                            wire:confirm="Sembunyikan pesanan {{ $order->order_id }}?"
+                                            class="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[8px] font-bold transition">
+                                        X
+                                    </button>
+                                @else
+                                    <span class="text-gray-300 text-[8px]">-</span>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="9" class="px-3 py-4 text-center text-gray-400 text-[11px]">Tidak ada data pesanan.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if(false)
+    <!-- Prioritas Operasional -->
+    <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+                <h4 class="font-semibold text-gray-800 text-sm">Prioritas Operasional</h4>
+                <p class="text-[11px] text-gray-500">Area yang biasanya perlu dicek sebelum melihat tabel detail.</p>
+            </div>
+            <button wire:click="toggleComparison"
+                    class="inline-flex items-center justify-center px-3 py-2 text-xs font-bold rounded-md border transition {{ $showComparison ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400 hover:text-indigo-600' }}">
+                {{ $showComparison ? 'Sembunyikan Perbandingan' : 'Tampilkan MoM/WoW' }}
+            </button>
+        </div>
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div class="rounded-lg bg-amber-50 border border-amber-100 p-3">
+                <p class="text-[10px] font-bold uppercase text-amber-700">Dana Menggantung</p>
+                <p class="mt-1 text-sm font-semibold text-gray-800">{{ $pesananBelumCairList->count() }} order</p>
+                <p class="text-xs text-gray-500">Order belum masuk laporan income.</p>
+            </div>
+            <div class="rounded-lg bg-red-50 border border-red-100 p-3">
+                <p class="text-[10px] font-bold uppercase text-red-700">Klaim Ongkir</p>
+                <p class="mt-1 text-sm font-semibold text-gray-800">Rp {{ number_format($totalPotensiKlaim, 0, ',', '.') }}</p>
+                <p class="text-xs text-gray-500">Potensi selisih ongkir.</p>
+            </div>
+            <div class="rounded-lg bg-rose-50 border border-rose-100 p-3">
+                <p class="text-[10px] font-bold uppercase text-rose-700">Retur / Refund</p>
+                <p class="mt-1 text-sm font-semibold text-gray-800">{{ $returnRefundHighRisk }} risiko tinggi</p>
+                <p class="text-xs text-gray-500">Order lama perlu investigasi.</p>
+            </div>
+            <div class="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                <p class="text-[10px] font-bold uppercase text-gray-500">Report</p>
+                <p class="mt-1 text-sm font-semibold text-gray-800">Printable Analytics</p>
+                <a href="{{ route('analytics.report', ['shop' => $selectedShop, 'range' => $timeRange, 'start' => $startDate, 'end' => $endDate, 'target_month' => $targetMonth]) }}"
+                   target="_blank"
+                   class="mt-2 inline-flex items-center justify-center px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-md text-[10px] font-bold transition">
+                    Export PDF / Print
+                </a>
+            </div>
+        </div>
+    </div>
+    @endif
 
     @if($showComparison && $comparisonData)
         @php
@@ -256,6 +380,7 @@
         </div>
     @endif
 
+    @if(false)
     <!-- TRENDING SKU -->
     <div class="p-5 bg-white rounded-lg shadow-sm border border-indigo-100 flex flex-col mb-6">
         <div class="mb-4 flex justify-between items-center">
@@ -295,6 +420,7 @@
             </table>
         </div>
     </div>
+    @endif
 
     <!-- PROFIT BREAKDOWN -->
     <div class="p-5 bg-white rounded-lg shadow-sm border border-emerald-100 flex flex-col mb-6">
@@ -352,6 +478,12 @@
         </div>
     </div>
 
+    @if (session('success_audit'))
+        <div class="px-4 py-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg text-sm font-medium mb-4">
+            {{ session('success_audit') }}
+        </div>
+    @endif
+
     <!-- RETURN & REFUND TRACKER -->
     <div class="p-5 bg-white rounded-lg shadow-sm border border-rose-100 flex flex-col mb-6">
         <div class="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -375,9 +507,10 @@
                         <th class="px-3 py-2 text-center w-10">No</th>
                         <th class="px-3 py-2 text-left">ID Pesanan</th>
                         <th class="px-3 py-2 text-left">Produk</th>
-                        <th class="px-3 py-2 text-center">Umur Belum Cair</th>
+                        <th class="px-3 py-2 text-center">Umur</th>
                         <th class="px-3 py-2 text-right">Nilai</th>
-                        <th class="px-3 py-2 text-center">Status Audit</th>
+                        <th class="px-3 py-2 text-center">Risiko</th>
+                        <th class="px-3 py-2 text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-gray-600">
@@ -386,7 +519,7 @@
                             $riskBadge = $candidate->refund_risk === 'tinggi'
                                 ? 'bg-red-100 text-red-700'
                                 : 'bg-amber-100 text-amber-700';
-                            $riskLabel = $candidate->refund_risk === 'tinggi' ? 'Indikasi Return/Refund' : 'Pantau Pencairan';
+                            $riskLabel = $candidate->refund_risk === 'tinggi' ? 'Return/Refund' : 'Pantau';
                         @endphp
                         <tr class="{{ $candidate->refund_risk === 'tinggi' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-amber-50/30' }} transition">
                             <td class="px-3 py-2.5 text-center text-gray-400">{{ $loop->iteration }}</td>
@@ -395,9 +528,16 @@
                             <td class="px-3 py-2.5 text-center font-bold">{{ $candidate->days_pending }} hari</td>
                             <td class="px-3 py-2.5 text-right font-medium">Rp {{ number_format($candidate->order_amount, 0, ',', '.') }}</td>
                             <td class="px-3 py-2.5 text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold {{ $riskBadge }}">{{ $riskLabel }}</span></td>
+                            <td class="px-3 py-2.5 text-center">
+                                <button wire:click="markAsAudited('{{ $candidate->order_id }}')"
+                                        wire:confirm="Tandai pesanan {{ $candidate->order_id }} sudah diaudit?"
+                                        class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[9px] font-bold transition">
+                                    Sudah di Audit
+                                </button>
+                            </td>
                         </tr>
                     @empty
-                        <tr><td colspan="6" class="px-3 py-4 text-center text-gray-400 text-[11px]">Tidak ada order lama yang belum cair.</td></tr>
+                        <tr><td colspan="7" class="px-3 py-4 text-center text-gray-400 text-[11px]">Tidak ada order lama yang belum cair.</td></tr>
                     @endforelse
                 </tbody>
             </table>
