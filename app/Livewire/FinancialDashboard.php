@@ -212,11 +212,15 @@ class FinancialDashboard extends Component
         $this->showComparison = !$this->showComparison;
     }
 
-    private function calculateHppOverhead($orders): float
+    private function calculateHppOverhead($orders, $productCosts = null): float
     {
-        $skuCosts = \App\Models\ProductCost::whereIn('sku_id', $orders->pluck('sku_id')->filter()->unique())
-            ->get()
-            ->keyBy('sku_id');
+        if ($productCosts === null) {
+            $skuCosts = \App\Models\ProductCost::whereIn('sku_id', $orders->pluck('sku_id')->filter()->unique())
+                ->get()
+                ->keyBy('sku_id');
+        } else {
+            $skuCosts = $productCosts;
+        }
 
         return (float) $orders->sum(function ($order) use ($skuCosts) {
             $cost = $skuCosts->get($order->sku_id);
@@ -282,6 +286,11 @@ class FinancialDashboard extends Component
         // All orders in period (including cancelled, for tracking display)
         $allOrdersInPeriod = $orderQuery->clone()->get();
 
+        // Batch load ProductCosts sekali untuk semua SKU yang dipakai
+        $allSkuIds = $orders->pluck('sku_id')->merge($allOrdersInPeriod->pluck('sku_id'))
+            ->filter()->unique()->values()->toArray();
+        $productCosts = \App\Models\ProductCost::whereIn('sku_id', $allSkuIds)->get()->keyBy('sku_id');
+
         // Cohort-based incomes: get incomes matching cohort order IDs, regardless of payout_time
         $cohortOrderIdSet = $orders->pluck('order_id')
             ->map(fn($id) => trim($id))
@@ -290,6 +299,7 @@ class FinancialDashboard extends Component
 
         $allShopIncomes = Income::query()
             ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+            ->whereIn('order_id', $cohortOrderIdSet)
             ->get();
 
         // Deduplicate: ambil income TERAKHIR per order_id (berdasarkan payout_time lalu id)
@@ -318,18 +328,20 @@ class FinancialDashboard extends Component
             ->values()
             ->toArray();
 
-        $unmatchedIncomeList = $allShopIncomes->filter(
-            fn($income) => !in_array(trim($income->order_id), $allOrderIdsInDb)
-        )->values();
+        $unmatchedIncomeList = Income::query()
+            ->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop))
+            ->whereNotIn('order_id', $allOrderIdsInDb)
+            ->get()
+            ->values();
 
         $totalOmsetKotor = (float) $orders->sum('order_amount');
         $totalCairBersih = (float) $incomeCohort->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
         $totalBiayaAdmin = (float) $incomeCohort->sum('platform_commission_fee') + $incomeCohort->sum('payment_fee');
 
-        // HPP & Overhead dari cohort orders
+        // HPP & Overhead dari cohort orders (batch productCosts)
         $totalHppDanOverhead = 0;
         foreach ($orders as $order) {
-            $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
+            $cost = $productCosts->get($order->sku_id);
             if ($cost) {
                 $totalHppDanOverhead += $order->quantity * ($cost->hpp_amount + $cost->overhead_per_pack);
             }
@@ -378,8 +390,8 @@ class FinancialDashboard extends Component
         $importedOrdersList = $allOrdersInPeriod
             ->reject(fn($o) => $o->hidden_at)
             ->reject(fn($o) => $o->retur_moved_at)
-            ->map(function ($order) use ($incomeMap) {
-                $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
+            ->map(function ($order) use ($incomeMap, $productCosts) {
+                $cost = $productCosts->get($order->sku_id);
                 $hpp = $cost ? $order->quantity * (float) $cost->hpp_amount : 0;
                 $trimmedId = trim($order->order_id);
                 $incomeRecord = $incomeMap->get($trimmedId);
@@ -413,7 +425,7 @@ class FinancialDashboard extends Component
         // Profit Breakdown per SKU (menggunakan cohort income)
         $skuProfitMap = [];
         foreach ($orders as $order) {
-            $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
+            $cost = $productCosts->get($order->sku_id);
             $trimmedOrderId = trim($order->order_id);
             $incomeRecord = $incomeMap->get($trimmedOrderId);
             $cair = $incomeRecord ? (float) $incomeRecord->disbursement_amount : 0;
@@ -571,7 +583,7 @@ class FinancialDashboard extends Component
             $lastOmset = (float) $lastOrders->sum('order_amount');
             $lastCair = (float) $lastIncomeCohort->where('disbursement_amount', '>', 0)->sum('disbursement_amount');
             $lastOrderCount = $lastOrders->count();
-            $lastHppOverhead = $this->calculateHppOverhead($lastOrders);
+            $lastHppOverhead = $this->calculateHppOverhead($lastOrders, $productCosts);
             $lastProfit = $lastCair - $lastHppOverhead;
             $currentOrderCount = $orders->count();
             $comparisonMax = max($totalOmsetKotor, $lastOmset, abs($profitBersihRiil), abs($lastProfit), $currentOrderCount, $lastOrderCount, 1);
