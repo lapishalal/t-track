@@ -34,4 +34,14 @@ class User extends Authenticatable
     {
         return $this->role === 'owner';
     }
+
+    public function isOperator(): bool
+    {
+        return $this->role === 'operator';
+    }
+
+    public function isUploader(): bool
+    {
+        return $this->role === 'uploader';
+    }
 }

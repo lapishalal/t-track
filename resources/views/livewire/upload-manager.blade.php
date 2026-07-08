@@ -13,9 +13,36 @@
     <!-- Form Input Nama Toko -->
     <div class="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
         <label class="block text-sm font-bold text-gray-800 mb-2">1. Nama Toko / Tenant</label>
-        <input type="text" wire:model.live.debounce.400ms="shop_name" placeholder="Contoh: MS Glow Official, Pinang Living"
-               class="w-full max-w-xl px-4 py-2.5 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-        <p class="mt-2 text-xs text-gray-500">Nama ini akan disimpan ke semua baris order dan income. Pastikan sama untuk file pesanan dan income toko tersebut.</p>
+
+        @if($existingShops->count() > 0 && !$useNewShop)
+            <div class="flex items-center gap-2 max-w-xl">
+                <select wire:model.live="shop_name"
+                        class="flex-1 px-4 py-2.5 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                    <option value="">-- Pilih toko --</option>
+                    @foreach($existingShops as $shop)
+                        <option value="{{ $shop }}">{{ $shop }}</option>
+                    @endforeach
+                </select>
+                <button wire:click="toggleNewShop(true)"
+                        class="px-3 py-2.5 text-sm text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-md border border-dashed border-indigo-300 whitespace-nowrap transition">
+                    + Toko Baru
+                </button>
+            </div>
+            <p class="mt-2 text-xs text-gray-500">Pilih toko yang sudah ada, atau klik <strong>+ Toko Baru</strong> jika belum terdaftar.</p>
+        @else
+            <div class="flex items-center gap-2 max-w-xl">
+                <input type="text" wire:model.live.debounce.400ms="shop_name" placeholder="Contoh: MS Glow Official, Pinang Living"
+                       class="flex-1 px-4 py-2.5 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                @if($existingShops->count() > 0)
+                    <button wire:click="toggleNewShop(false)"
+                            class="px-3 py-2.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-md border border-gray-300 whitespace-nowrap transition">
+                        &larr; Pilih Toko
+                    </button>
+                @endif
+            </div>
+            <p class="mt-2 text-xs text-gray-500">Nama ini akan disimpan ke semua baris order dan income. Pastikan sama untuk file pesanan dan income toko tersebut.</p>
+        @endif
+
         @error('shop_name') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
     </div>
 

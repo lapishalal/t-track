@@ -13,6 +13,15 @@ class UploadManager extends Component
     public $shop_name;
     public $file_order;
     public $file_income;
+    public $useNewShop = false;
+
+    public function toggleNewShop($value)
+    {
+        $this->useNewShop = $value;
+        if ($value) {
+            $this->shop_name = '';
+        }
+    }
 
     public function processOrder(TikTokParserService $parser)
     {
@@ -59,6 +68,11 @@ class UploadManager extends Component
     public function render()
     {
         $uploadLogs = \App\Models\UploadLog::orderBy('created_at', 'desc')->limit(50)->get();
-        return view('livewire.upload-manager', ['uploadLogs' => $uploadLogs]);
+        $existingShops = \App\Models\UploadLog::whereNotNull('shop_name')
+            ->distinct()->pluck('shop_name')->sort()->values();
+        return view('livewire.upload-manager', [
+            'uploadLogs' => $uploadLogs,
+            'existingShops' => $existingShops,
+        ]);
     }
 }

@@ -25,12 +25,16 @@ class Order extends Model
         'created_time',
         'batch_id',
         'audited_at',
-        'hidden_at'
+        'hidden_at',
+        'retur_moved_at',
+        'retur_completed_at'
     ];
 
     protected $casts = [
         'audited_at' => 'datetime',
         'hidden_at' => 'datetime',
+        'retur_moved_at' => 'datetime',
+        'retur_completed_at' => 'datetime',
     ];
 
     // Hubungan 1 to 1 dari Order ke data Keuangan (Income)

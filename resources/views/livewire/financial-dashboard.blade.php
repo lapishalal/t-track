@@ -196,7 +196,7 @@
                             Status
                             @if($sortField === 'order_status') <span class="text-indigo-600">{{ $sortDirection === 'asc' ? '▲' : '▼' }}</span> @endif
                         </th>
-                        <th class="px-2 py-2 text-center w-[65px]">Aksi</th>
+                        <th class="px-2 py-2 text-center w-[72px]">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-gray-600">
@@ -206,7 +206,8 @@
                             $isCancelled = $statusLower === 'Dibatalkan';
                             $isUnpaid = $statusLower === 'Belum dibayar';
                             $showHideBtn = $isCancelled || $isUnpaid;
-                            $rowBg = $isCancelled ? 'bg-red-50/20 hover:bg-red-50/40' : ($isUnpaid ? 'bg-yellow-50/20 hover:bg-yellow-50/40' : 'hover:bg-gray-50/40');
+                            $showReturBtn = !$order->is_cair;
+                            $rowBg = $isCancelled ? 'bg-red-50/20 hover:bg-red-50/40' : ($isUnpaid ? 'bg-yellow-50/20 hover:bg-yellow-50/40' : ($showReturBtn ? 'bg-amber-50/20 hover:bg-amber-50/40' : 'hover:bg-gray-50/40'));
                             $statusBadge = $isCancelled ? 'bg-red-100 text-red-700' : ($isUnpaid ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700');
                         @endphp
                         <tr class="{{ $rowBg }} transition">
@@ -228,13 +229,22 @@
                                 <td class="px-2 py-2 text-right text-gray-300 text-[10px]">-</td>
                             @endif
                             <td class="px-2 py-2 text-center"><span class="px-1 py-0.5 rounded text-[8px] font-bold {{ $statusBadge }}">{{ $order->order_status ?: '-' }}</span></td>
-                            <td class="px-2 py-2 text-center">
-                                @if($showHideBtn)
+                            <td class="px-1 py-2 text-center flex gap-0.5 justify-center items-center">
+                                @if($showReturBtn)
+                                    <button wire:click="markRetur('{{ $order->order_id }}')"
+                                            wire:confirm="Pindahkan pesanan {{ $order->order_id }} ke daftar retur?"
+                                            class="px-1 py-0.5 bg-gray-800 hover:bg-gray-900 text-white rounded text-[7px] font-bold transition"
+                                            title="Pindahkan ke daftar Retur">
+                                        R
+                                    </button>
+                                    @if($showHideBtn)
                                     <button wire:click="hideOrder('{{ $order->order_id }}')"
                                             wire:confirm="Sembunyikan pesanan {{ $order->order_id }}?"
-                                            class="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[8px] font-bold transition">
+                                            class="px-1 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[7px] font-bold transition"
+                                            title="Sembunyikan dari daftar">
                                         X
                                     </button>
+                                    @endif
                                 @else
                                     <span class="text-gray-300 text-[8px]">-</span>
                                 @endif
@@ -247,6 +257,70 @@
             </table>
         </div>
     </div>
+
+    @if($returOrdersList->count() > 0)
+    <!-- DAFTAR RETUR -->
+    <div class="p-5 bg-white rounded-lg shadow-sm border border-amber-200 flex flex-col h-[400px]">
+        <div class="mb-4 flex justify-between items-center">
+            <div>
+                <h4 class="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 bg-amber-600 rounded-full"></span>
+                    Daftar Retur
+                </h4>
+                <p class="text-[11px] text-gray-500">Pesanan retur/refund yang sedang dipantau.</p>
+            </div>
+            <span class="text-xs font-medium bg-amber-100 text-amber-700 px-2.5 py-1 rounded">{{ $returOrdersList->count() }} pesanan</span>
+        </div>
+        <div class="overflow-y-auto flex-grow max-h-56 border border-gray-100 rounded">
+            <table class="min-w-full w-full divide-y divide-gray-200 text-xs table-fixed">
+                <thead class="bg-amber-50 text-amber-800 font-semibold uppercase sticky top-0 z-10">
+                    <tr>
+                        <th class="px-2 py-2 text-center w-8">No</th>
+                        <th class="px-2 py-2 text-left w-[80px]">Tanggal</th>
+                        <th class="px-2 py-2 text-left w-[110px]">ID Pesanan</th>
+                        <th class="px-2 py-2 text-left">Produk / Varian</th>
+                        <th class="px-2 py-2 text-right w-[80px]">Nilai</th>
+                        <th class="px-2 py-2 text-center w-[60px]">Status</th>
+                        <th class="px-2 py-2 text-center w-[80px]">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-gray-600">
+                    @forelse($returOrdersList as $order)
+                        @php $completed = $order->retur_completed_at; @endphp
+                        <tr class="{{ $completed ? 'bg-emerald-50/30' : 'hover:bg-amber-50/30' }} transition">
+                            <td class="px-2 py-2 text-center text-gray-400">{{ $loop->iteration }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap text-[10px]">{{ $order->created_time ? \Carbon\Carbon::parse($order->created_time)->format('d/m/Y') : '-' }}</td>
+                            <td class="px-2 py-2 font-mono text-indigo-600 text-[9px] break-all">{{ $order->order_id }}</td>
+                            <td class="px-2 py-2 whitespace-normal break-words text-[10px] leading-tight">{{ $order->product_name }}@if($order->variation)<br><span class="text-gray-400 text-[9px]">{{ $order->variation }}</span>@endif</td>
+                            <td class="px-2 py-2 text-right font-medium text-[10px]">Rp{{ number_format($order->order_amount, 0, ',', '.') }}</td>
+                            <td class="px-2 py-2 text-center">
+                                @if($completed)
+                                    <span class="px-1 py-0.5 rounded text-[8px] font-bold bg-emerald-100 text-emerald-700">Kembali</span>
+                                @else
+                                    <span class="px-1 py-0.5 rounded text-[8px] font-bold bg-amber-100 text-amber-700">Proses</span>
+                                @endif
+                            </td>
+                            <td class="px-2 py-2 text-center">
+                                @if(!$completed)
+                                    <button wire:click="markReturCompleted('{{ $order->order_id }}')"
+                                            wire:confirm="Produk pesanan {{ $order->order_id }} sudah kembali ke seller?"
+                                            class="px-1 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[8px] font-bold transition"
+                                            title="Tandai sudah kembali">
+                                        ✓
+                                    </button>
+                                @else
+                                    <span class="text-emerald-500 text-[10px]">✔</span>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="7" class="px-3 py-4 text-center text-gray-400 text-[11px]">Tidak ada data retur.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
 
     @if(false)
     <!-- Prioritas Operasional -->

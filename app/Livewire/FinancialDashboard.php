@@ -252,6 +252,22 @@ class FinancialDashboard extends Component
         }
     }
 
+    public function markRetur($orderId)
+    {
+        $order = Order::where('order_id', $orderId)->first();
+        if ($order && !$order->retur_moved_at) {
+            $order->update(['retur_moved_at' => now()]);
+        }
+    }
+
+    public function markReturCompleted($orderId)
+    {
+        $order = Order::where('order_id', $orderId)->first();
+        if ($order && $order->retur_moved_at && !$order->retur_completed_at) {
+            $order->update(['retur_completed_at' => now()]);
+        }
+    }
+
     public function render()
     {
         $orderQuery = Order::query()->when($this->selectedShop, fn($q) => $q->where('shop_name', $this->selectedShop));
@@ -353,6 +369,7 @@ class FinancialDashboard extends Component
         // Daftar Pesanan Terimport
         $importedOrdersList = $allOrdersInPeriod
             ->reject(fn($o) => $o->hidden_at)
+            ->reject(fn($o) => $o->retur_moved_at)
             ->map(function ($order) use ($incomeMap) {
                 $cost = \App\Models\ProductCost::where('sku_id', $order->sku_id)->first();
                 $hpp = $cost ? $order->quantity * (float) $cost->hpp_amount : 0;
@@ -367,6 +384,19 @@ class FinancialDashboard extends Component
                 return $order;
             })
             ->sortBy($this->sortField, SORT_REGULAR, $this->sortDirection === 'desc')
+            ->values();
+
+        // Daftar Retur
+        $returOrdersList = $allOrdersInPeriod
+            ->filter(fn($o) => $o->retur_moved_at)
+            ->map(function ($order) use ($incomeMap) {
+                $incomeRecord = $incomeMap->get(trim($order->order_id));
+                $disbursement = $incomeRecord ? (float) $incomeRecord->disbursement_amount : 0;
+                $order->omset_real = $disbursement > 0 ? $disbursement : 0;
+                $order->is_cair = $disbursement > 0;
+                return $order;
+            })
+            ->sortByDesc('created_time')
             ->values();
 
         // Net Profit = cohort-based (consistent)
@@ -574,6 +604,7 @@ class FinancialDashboard extends Component
             'totalSudahDiklaim' => $totalSudahDiklaim,
             'comparisonData' => $comparisonData,
             'importedOrdersList' => $importedOrdersList,
+            'returOrdersList' => $returOrdersList,
             'monthlyTarget' => $monthlyTarget,
             'monthlySales' => $monthlySales,
             'targetProgress' => $targetProgress,
