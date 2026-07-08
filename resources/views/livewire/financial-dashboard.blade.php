@@ -49,6 +49,7 @@
         </div>
     @endif
 
+    @if($isOwner)
     @if(false)
     <!-- Target Bulanan & Report -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -165,6 +166,7 @@
             <p class="text-xl font-bold mt-1">Rp {{ number_format($profitBersih, 0, ',', '.') }}</p>
         </div>
     </div>
+    @endif
 
     <!-- DAFTAR PESANAN TERIMPORT -->
     <div class="p-5 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-[400px]">
@@ -322,6 +324,7 @@
     </div>
     @endif
 
+    @if($isOwner)
     @if(false)
     <!-- Prioritas Operasional -->
     <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
@@ -831,5 +834,6 @@
             </div>
         </div>
     </div>
+    @endif
     @endif
 </div>

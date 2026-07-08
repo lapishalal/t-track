@@ -13,6 +13,7 @@ class UserManager extends Component
     public $email;
     public $password;
     public $role = 'operator';
+    public $editingUserId = null;
 
     public function mount()
     {
@@ -21,24 +22,61 @@ class UserManager extends Component
 
     public function createUser()
     {
-        $this->validate([
+        $rules = [
             'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8',
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->editingUserId)],
             'role' => ['required', Rule::in(['operator', 'uploader'])],
-        ]);
+        ];
 
-        User::create([
+        if ($this->editingUserId) {
+            $rules['password'] = 'nullable|string|min:8';
+        } else {
+            $rules['password'] = 'required|string|min:8';
+        }
+
+        $this->validate($rules);
+
+        $data = [
             'name' => trim($this->name),
             'email' => trim($this->email),
-            'password' => Hash::make($this->password),
             'role' => $this->role,
-        ]);
+        ];
 
-        session()->flash('success_users', "User {$this->name} berhasil dibuat.");
+        if ($this->password) {
+            $data['password'] = Hash::make($this->password);
+        }
 
-        $this->reset('name', 'email', 'password', 'role');
-        $this->reset('role');
+        if ($this->editingUserId) {
+            $user = User::findOrFail($this->editingUserId);
+            $user->update($data);
+            session()->flash('success_users', "User {$user->name} berhasil diperbarui.");
+        } else {
+            User::create($data);
+            session()->flash('success_users', "User {$this->name} berhasil dibuat.");
+        }
+
+        $this->resetForm();
+    }
+
+    public function editUser($userId)
+    {
+        $user = User::findOrFail($userId);
+
+        if ($user->isOwner()) {
+            session()->flash('error_users', 'Tidak bisa mengedit user Owner.');
+            return;
+        }
+
+        $this->editingUserId = $user->id;
+        $this->name = $user->name;
+        $this->email = $user->email;
+        $this->role = $user->role;
+        $this->password = '';
+    }
+
+    public function cancelEdit()
+    {
+        $this->resetForm();
     }
 
     public function deleteUser($userId)
@@ -57,6 +95,12 @@ class UserManager extends Component
 
         $user->delete();
         session()->flash('success_users', "User {$user->name} berhasil dihapus.");
+    }
+
+    private function resetForm()
+    {
+        $this->reset('name', 'email', 'password', 'editingUserId');
+        $this->role = 'operator';
     }
 
     public function render()
