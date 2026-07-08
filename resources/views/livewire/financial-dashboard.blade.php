@@ -621,42 +621,42 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- PESANAN BELUM CAIR -->
-        <div class="p-5 bg-white rounded-lg shadow-sm border border-amber-200 flex flex-col h-[400px]">
-            <div class="mb-4">
-                <h4 class="font-semibold text-gray-800 text-sm flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 bg-amber-500 rounded-full"></span>
-                    Audit: Pesanan Menggantung
-                </h4>
-                <p class="text-[11px] text-gray-500">Order belum dilepas ke laporan Income.</p>
-            </div>
-            <div class="overflow-x-auto overflow-y-auto flex-grow max-h-64 border border-gray-100 rounded">
-                <table class="min-w-full divide-y divide-gray-200 text-xs">
-                    <thead class="bg-amber-50 text-amber-800 font-semibold uppercase sticky top-0 z-10">
-                        <tr>
-                            <th class="px-3 py-2 text-center w-10">No</th>
-                            <th class="px-3 py-2 text-left">ID Pesanan</th>
-                            <th class="px-3 py-2">Tanggal</th>
-                            <th class="px-3 py-2 text-right">Nilai</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 text-gray-600">
-                        @forelse($pesananBelumCairList as $pbc)
-                            <tr class="hover:bg-amber-50/30">
-                                <td class="px-3 py-2.5 text-center text-gray-500">{{ $loop->iteration }}</td>
-                                <td class="px-3 py-2.5 font-mono text-indigo-600">{{ $pbc->order_id }}</td>
-                                <td class="px-3 py-2.5">{{ \Carbon\Carbon::parse($pbc->created_time)->format('d M Y') }}</td>
-                                <td class="px-3 py-2.5 text-right font-medium">Rp {{ number_format($pbc->order_amount, 0, ',', '.') }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="4" class="px-3 py-4 text-center text-gray-400 text-[11px]">Semua dana sudah cair!</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+    <!-- PESANAN BELUM CAIR -->
+    <div class="p-5 bg-white rounded-lg shadow-sm border border-amber-200 flex flex-col h-[400px]">
+        <div class="mb-4">
+            <h4 class="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                <span class="w-2.5 h-2.5 bg-amber-500 rounded-full"></span>
+                Audit: Pesanan Menggantung
+            </h4>
+            <p class="text-[11px] text-gray-500">Order belum dilepas ke laporan Income.</p>
         </div>
+        <div class="overflow-x-auto overflow-y-auto flex-grow max-h-64 border border-gray-100 rounded">
+            <table class="min-w-full divide-y divide-gray-200 text-xs">
+                <thead class="bg-amber-50 text-amber-800 font-semibold uppercase sticky top-0 z-10">
+                    <tr>
+                        <th class="px-3 py-2 text-center w-10">No</th>
+                        <th class="px-3 py-2 text-left">ID Pesanan</th>
+                        <th class="px-3 py-2">Tanggal</th>
+                        <th class="px-3 py-2 text-right">Nilai</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-gray-600">
+                    @forelse($pesananBelumCairList as $pbc)
+                        <tr class="hover:bg-amber-50/30">
+                            <td class="px-3 py-2.5 text-center text-gray-500">{{ $loop->iteration }}</td>
+                            <td class="px-3 py-2.5 font-mono text-indigo-600">{{ $pbc->order_id }}</td>
+                            <td class="px-3 py-2.5">{{ \Carbon\Carbon::parse($pbc->created_time)->format('d M Y') }}</td>
+                            <td class="px-3 py-2.5 text-right font-medium">Rp {{ number_format($pbc->order_amount, 0, ',', '.') }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4" class="px-3 py-4 text-center text-gray-400 text-[11px]">Semua dana sudah cair!</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
 
+    @if(false)
         <!-- ANOMALI ONGKIR + CLAIM TRACKER -->
         <div class="p-5 bg-white rounded-lg shadow-sm border border-red-100 flex flex-col h-[400px]">
             <div class="mb-3">
@@ -719,7 +719,7 @@
                 </table>
             </div>
         </div>
-    </div>
+    @endif
 
     <!-- REGIONAL DASHBOARD -->
     <div class="p-5 bg-white rounded-lg shadow-sm border border-blue-100 flex flex-col mb-6 mt-6">

@@ -264,7 +264,10 @@ class FinancialDashboard extends Component
     {
         $order = Order::where('order_id', $orderId)->first();
         if ($order && $order->retur_moved_at && !$order->retur_completed_at) {
-            $order->update(['retur_completed_at' => now()]);
+            $order->update([
+                'retur_completed_at' => now(),
+                'order_status' => 'Selesai',
+            ]);
         }
     }
 
@@ -333,12 +336,17 @@ class FinancialDashboard extends Component
         }
 
         // Belum Cair (non-cancelled only, untuk financial + return/refund tracker)
+        // Exclude: retur completed (barang sudah kembali) dan dibatalkan yang sudah dihide (sudah diaudit)
         $totalDanaMenggantung = 0;
         $pesananBelumCairList = collect();
         foreach ($orders as $order) {
             if (!in_array(trim($order->order_id), $incomeOrderIds)) {
-                $totalDanaMenggantung += $order->order_amount;
-                $pesananBelumCairList->push($order);
+                $isReturCompleted = $order->retur_completed_at;
+                $isHiddenCancelled = $order->hidden_at && $order->order_status === 'Dibatalkan';
+                if (!$isReturCompleted && !$isHiddenCancelled) {
+                    $totalDanaMenggantung += $order->order_amount;
+                    $pesananBelumCairList->push($order);
+                }
             }
         }
 
@@ -443,7 +451,9 @@ class FinancialDashboard extends Component
             $provinceMap[$province]['total_orders']++;
             $provinceMap[$province]['total_omset'] += (float) $order->order_amount;
             $provinceMap[$province]['total_shipping'] += (float) ($order->shipping_fee_estimated ?? 0);
-            if (!in_array(trim($order->order_id), $incomeOrderIds)) {
+            $isReturCompletedProv = $order->retur_completed_at;
+            $isHiddenCancelledProv = $order->hidden_at && $order->order_status === 'Dibatalkan';
+            if (!in_array(trim($order->order_id), $incomeOrderIds) && !$isReturCompletedProv && !$isHiddenCancelledProv) {
                 $provinceMap[$province]['pending_orders']++;
                 $provinceMap[$province]['pending_amount'] += (float) $order->order_amount;
             }
